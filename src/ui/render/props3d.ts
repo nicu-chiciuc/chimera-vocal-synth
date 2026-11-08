@@ -30,6 +30,9 @@ export interface Props {
   hat: PropGroup[];
   /** standing still under the head */
   body: PropGroup[];
+  /** the arms for this moment: `strum` −1..1 is the right hand across the strings (down to up),
+   *  `fret` 0..1 the left hand along the neck (from the nut towards the body) */
+  arms(strum: number, fret: number): PropGroup;
 }
 
 class Lines {
@@ -170,7 +173,7 @@ function hat(head: HeadSections, k: number): PropGroup[] {
 /** half-width of the guitar's body along its length (cm from the waist, + towards the neck) */
 const GUITAR_W = [[-31, 0], [-30.2, 7], [-27.5, 14], [-22, 18.8], [-15, 19.6], [-8, 17], [-2.5, 12.6], [1.5, 12.2], [7, 13.8], [13, 14.6], [18, 12.4], [21.5, 7.5], [22.6, 0]] as const;
 
-function body(head: HeadSections, k: number): PropGroup[] {
+function body(head: HeadSections, k: number): { groups: PropGroup[]; arms: Props["arms"] } {
   const yn = head.y0 + 1.0 * k;
   const ns = head.at(yn) ?? { F: 3 * k, Bk: -4 * k, W: 5.3 * k };
   const cx = (ns.F + ns.Bk) / 2 - 0.5 * k;
@@ -237,21 +240,30 @@ function body(head: HeadSections, k: number): PropGroup[] {
   // the arms: the right one over the lower bout, its hand at the strings by the sound hole; the
   // left reaching along the neck to the fretboard
   const shoulder = (side: number): V3 => [cx - 0.5 * k, yn - 7.5 * k, side * 18.5 * k];
-  const arms = new Lines();
-  const right = spline([shoulder(1), [cx - 1 * k, yn - 20 * k, 21 * k], [cx + 2 * k, yn - 30 * k, 21 * k], P(-12, 16, 9), P(-3, 5, 8)], 6);
-  const left = spline([shoulder(-1), [cx, yn - 20 * k, -20 * k], [cx + 9 * k, yn - 26 * k, -17 * k], P(36, -10, 7), P(44, -3, 6.5)], 6);
   const r = (n: number) => (i: number) => k * lerp(4.8, 2.8, i / (n - 1));
-  tube(arms, right, r(right.length), 8, 4);
-  tube(arms, left, r(left.length), 8, 4);
-  return [
-    { lines: torso.lines, color: V.blueMid, width: 0.85, alpha: 0.55 },
-    { lines: arms.lines, color: V.blueMid, width: 0.85, alpha: 0.6 },
-    { lines: g.lines, color: V.amber, width: 1.05, alpha: 0.9 },
-    { lines: frets.lines, color: V.amber, width: 0.85, alpha: 0.6 },
-    { lines: strings.lines, color: V.white, width: 0.6, alpha: 0.8 },
-  ];
+  const arms = (strum: number, fret: number): PropGroup => {
+    const L = new Lines();
+    // the right hand sweeps across the strings over the sound hole, the wrist following
+    const right = spline([shoulder(1), [cx - 1 * k, yn - 20 * k, 21 * k], [cx + 2 * k, yn - 30 * k, 21 * k], P(-12, 16 + 3 * strum, 9), P(-3, 5 + 7 * strum, 8)], 6);
+    // the left hand moves up the neck (towards the body) as the chord climbs
+    const u = 34 + 16 * fret;
+    const left = spline([shoulder(-1), [cx, yn - 20 * k, -20 * k], [cx + 9 * k, yn - 26 * k, -17 * k], P(u - 8, -10, 7), P(u, -3, 6.5)], 6);
+    tube(L, right, r(right.length), 8, 4);
+    tube(L, left, r(left.length), 8, 4);
+    return { lines: L.lines, color: V.blueMid, width: 0.85, alpha: 0.6 };
+  };
+  return {
+    groups: [
+      { lines: torso.lines, color: V.blueMid, width: 0.85, alpha: 0.55 },
+      { lines: g.lines, color: V.amber, width: 1.05, alpha: 0.9 },
+      { lines: frets.lines, color: V.amber, width: 0.85, alpha: 0.6 },
+      { lines: strings.lines, color: V.white, width: 0.6, alpha: 0.8 },
+    ],
+    arms,
+  };
 }
 
 export function buildProps(head: HeadSections, k: number): Props {
-  return { hat: hat(head, k), body: body(head, k) };
+  const b = body(head, k);
+  return { hat: hat(head, k), body: b.groups, arms: b.arms };
 }

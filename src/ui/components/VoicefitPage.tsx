@@ -23,6 +23,9 @@ import { getModel } from "../useModel.ts";
 import { VoiceModel } from "../analysis.ts";
 import type { BodyMix } from "../../wasm/types.ts";
 import type { ViewFlags } from "../render/anatomy.ts";
+import { mouthWords } from "../mouthWords.ts";
+import { wordAt, type SungWords } from "../../show/words.ts";
+import { V } from "../colors.ts";
 
 // three.js loads with the stage
 const AnatomyView3D = lazy(() => import("./AnatomyView3D.tsx").then((m) => ({ default: m.AnatomyView3D })));
@@ -35,6 +38,8 @@ interface Line {
   t0: number;
   t1: number;
   split: Split | null;
+  /** each word as aligned: text, start, end (s) */
+  words?: [string, number, number][];
 }
 
 interface Judged {
@@ -62,8 +67,32 @@ interface Catalog {
   target: string;
   /** the separated instrumental on the same timeline (prepare.py backing) */
   accompaniment?: string;
+  /** the band's strums (note onsets in the instrumental, s): the performer's right hand */
+  strums?: number[];
   lines: Line[];
   candidates: Candidate[];
+}
+
+/** the last index of a sorted list at or before t, or −1 */
+function lastAtOrBefore(xs: number[], t: number): number {
+  let lo = 0, hi = xs.length - 1, k = -1;
+  while (lo <= hi) {
+    const mid = (lo + hi) >> 1;
+    if (xs[mid] <= t) {
+      k = mid;
+      lo = mid + 1;
+    } else hi = mid - 1;
+  }
+  return k;
+}
+
+/** the right hand across the strings at t: each strum sweeps it, down and up in turn, in 110 ms */
+function strumAt(on: number[], t: number): number {
+  const k = lastAtOrBefore(on, t);
+  if (k < 0) return 1;
+  const to = k % 2 === 0 ? -1 : 1;
+  const u = Math.min(1, (t - on[k]) / 0.11);
+  return -to + 2 * to * u * u * (3 - 2 * u);
 }
 
 /** a stretch of the timeline: one line, or the whole excerpt */
@@ -299,6 +328,14 @@ export function VoicefitPage() {
 
   useEffect(() => () => stop(), [stop]);
 
+  // the words at the mouth, as the singer sang them (the aligner's word times)
+  const words = useMemo<SungWords | null>(() => {
+    const all = cat?.lines.flatMap((l) => l.words ?? []) ?? [];
+    if (!all.length) return null;
+    return { times: all.map(([, a, b]) => [a, b] as [number, number]), shown: all.map(([w]) => w), parent: all.map((_, i) => i) };
+  }, [cat]);
+  const overlay = useMemo(() => (words ? mouthWords(() => (clockRef.current ? wordAt(words, now() ?? -1) : null), V.green, 1) : undefined), [words, now]);
+
   // the performer: one feed per shown voice, reading the playhead each frame
   const feed = useMemo<HeadFeed | null>(() => {
     const c = performer ? byId.get(performer) : undefined;
@@ -306,19 +343,23 @@ export function VoicefitPage() {
     if (!c || !track) return null;
     const model = getModel(c.body ?? track.body, track.sampleRate);
     let last = VoiceModel.articFromArray(track.message(0).t.artic);
+    const strums = cat?.strums ?? [];
+    // the left hand climbs the neck with the sung pitch (eased, held through unvoiced sounds)
+    let fret = 0.3;
     return {
       model,
       view: VIEW,
       stage: true,
       frame: () => {
         const t = now();
-        if (t === null) return { tele: null, artic: last, epoch: epoch.current };
+        if (t === null) return { tele: null, artic: last, epoch: epoch.current, pose: { strum: 1, fret } };
         const msg = track.message(track.indexAt(t));
         last = VoiceModel.articFromArray(msg.t.artic);
-        return { tele: msg, artic: last, epoch: epoch.current };
+        if (msg.t.f0 > 40 && msg.t.voicing > 0.3) fret += (Math.min(1, Math.max(0, Math.log2(msg.t.f0 / 85) / 1.1)) - fret) * 0.08;
+        return { tele: msg, artic: last, epoch: epoch.current, pose: { strum: strums.length ? strumAt(strums, t) : 0, fret } };
       },
     };
-  }, [performer, byId, teles, now]);
+  }, [performer, byId, teles, now, cat]);
 
   if (error)
     return (
@@ -368,7 +409,7 @@ export function VoicefitPage() {
       >
         {feed ? (
           <Suspense fallback={null}>
-            <AnatomyView3D key={performer ?? ""} feed={feed} readouts={false} />
+            <AnatomyView3D key={performer ?? ""} feed={feed} readouts={false} overlay={overlay} />
           </Suspense>
         ) : (
           <p className="vf-msg">{teles.size ? "" : "Loading the performer…"}</p>

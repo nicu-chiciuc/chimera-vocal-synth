@@ -31,7 +31,7 @@ import type { TelemetryMessage } from "../../worklet/protocol.ts";
 export interface HeadFeed {
   model: VoiceModel;
   view: ViewFlags;
-  frame(): { tele: TelemetryMessage | null; artic: HumanArtic; epoch: number };
+  frame(): { tele: TelemetryMessage | null; artic: HumanArtic; epoch: number; pose?: { strum: number; fret: number } };
   /** cap on the device pixel ratio (two heads on a phone draw half the pixels at 1.5) */
   maxDpr?: number;
   /** which way the head turns to show its face (see Anatomy3D.facing) */
@@ -187,6 +187,7 @@ export function AnatomyView3D(props: { slots?: SlotsFn; info?: InfoFn; showForma
         }
         tele = fr.tele;
         a = tele ? VoiceModel.articFromArray(tele.t.artic) : fr.artic;
+        if (fr.pose) r.pose = fr.pose;
       } else {
         tele = engine.latest && sameBody(engine.latest.body, st.body) ? engine.latest : null;
         a = tele ? VoiceModel.articFromArray(tele.t.artic) : st.artic;

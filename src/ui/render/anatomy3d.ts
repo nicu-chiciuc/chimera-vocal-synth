@@ -648,6 +648,8 @@ export class Anatomy3D {
   /** a performer on a stage: a hat on the head, a torso and a guitar below, framed to show them
    *  (props3d.ts) */
   stage = false;
+  /** the player's hands this frame: `strum` −1..1 across the strings, `fret` 0..1 along the neck */
+  pose = { strum: 0, fret: 0.3 };
   private props: { model: VoiceModel; p: Props } | null = null;
   private readonly unturn = new THREE.Matrix4();
   private clock = 0;
@@ -698,7 +700,9 @@ export class Anatomy3D {
     this.compact = w < 560;
     this.camera.aspect = w / h;
     // on a wide screen the head sits left of centre, leaving the right for the readouts
-    if (this.compact || this.centred) this.camera.clearViewOffset();
+    // a stage: the face (the orbit's centre) sits in the upper part of the frame
+    if (this.stage) this.camera.setViewOffset(w, h, 0, 0.26 * h, w, h);
+    else if (this.compact || this.centred) this.camera.clearViewOffset();
     else this.camera.setViewOffset(w, h, 0.1 * w, 0, w, h);
     this.camera.updateProjectionMatrix();
     this.beams.setResolution(w, h);
@@ -713,10 +717,12 @@ export class Anatomy3D {
     let d = 1.1 * Math.max(15.2 / half, 11 / (half * Math.max(0.3, this.camera.aspect)));
     const target = r.center.clone();
     if (this.stage) {
-      // hat to the guitar's lower bout: about 85 cm tall, centred on the chest
+      // orbit and zoom about the face (the nose's height, a little inside the face), and stand
+      // back far enough for hat to guitar: the view offset in resize() puts the face in the upper
+      // part of the frame, so the guitar shows below it
       const k = model.tract.scale;
-      target.y -= 27 * k;
-      d = 1.1 * Math.max(49 / half, 38 / (half * Math.max(0.3, this.camera.aspect)));
+      target.set(r.center.x + 2.5 * k, r.head.y1 - 11 * k, 0);
+      d = 1.1 * Math.max(44 / half, 36 / (half * Math.max(0.3, this.camera.aspect)));
     }
     // facing left: the same three-quarter view from the head's other side
     const az = this.facing > 0 ? 0.62 : Math.PI - 0.62, el = 0.2;
@@ -914,7 +920,7 @@ export class Anatomy3D {
     const B = this.beams;
     for (const g of this.props.p.hat) for (const l of g.lines) B.line(l, l.length / 3, g.color, g.width, { alpha: g.alpha });
     const e = this.unturn.copy(B.group.matrix).invert().elements;
-    for (const g of this.props.p.body) {
+    for (const g of [...this.props.p.body, this.props.p.arms(this.pose.strum, this.pose.fret)]) {
       for (const l of g.lines) {
         const P = this.tmp.reset();
         for (let i = 0; i < l.length; i += 3) {

@@ -2,7 +2,8 @@
 
   catalog.py <dir> [--train 0-3] [--hold 4-7]
 
-Writes <dir>/candidates.json: the singer's lines (text, times, training or held-out) and every
+Writes <dir>/candidates.json: the singer's lines (text, times, each word's times, training or
+held-out), the band's strums (onsets in accompaniment.wav, if there is one) and every
 candidate voice: the untuned default (<dir>/default/) and each <dir>/fit*/ with a best.json, each
 sung over the whole excerpt (best-full.wav, and best-full.tele for the page's 3D head; rendered
 if missing). A fit's best.json can be copied into another excerpt's folder (the whole song) to
@@ -32,6 +33,14 @@ def stamp(p):
     return f"{s.st_size}:{int(s.st_mtime)}"
 
 
+def strums(path):
+    """The band's strums: note onsets in the instrumental (librosa), for the performer's right hand."""
+    import librosa
+
+    y, sr = librosa.load(path, sr=22050, mono=True)
+    return [round(float(t), 3) for t in librosa.onset.onset_detect(y=y, sr=sr, units="time", backtrack=False)]
+
+
 def main():
     args = sys.argv[1:]
     d = pathlib.Path(args[0]).resolve()
@@ -48,7 +57,8 @@ def main():
     for i, p in enumerate(track["phrases"]):
         ph = [x for w in p["words"] for x in w["phones"]]
         split = next((k for k, w in splits.items() if i in w), None)
-        lines.append({"i": i, "text": p["text"], "t0": round(ph[0][1] - 0.15, 3), "t1": round(ph[-1][2] + 0.25, 3), "split": split})
+        words = [[w["w"], w["phones"][0][1], w["phones"][-1][2]] for w in p["words"] if w["phones"]]
+        lines.append({"i": i, "text": p["text"], "t0": round(ph[0][1] - 0.15, 3), "t1": round(ph[-1][2] + 0.25, 3), "split": split, "words": words})
 
     # the app's profiles, by the settings they were made from (a fit's best.json may be copied to
     # another excerpt's folder: the settings are what identify it)
@@ -119,6 +129,7 @@ def main():
     cat = {"title": d.parent.name + " / " + d.name, "target": "target.wav", "lines": lines, "candidates": out}
     if (d / "accompaniment.wav").exists():
         cat["accompaniment"] = "accompaniment.wav"
+        cat["strums"] = strums(d / "accompaniment.wav")
     json.dump(cat, open(d / "candidates.json", "w"), indent=1)
     print(f"{d / 'candidates.json'}: {len(out)} candidates, {len(lines)} lines")
 
