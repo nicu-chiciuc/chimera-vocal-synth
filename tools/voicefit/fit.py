@@ -102,11 +102,13 @@ def track_for(base, p, which, level, duration=None):
     return t
 
 
-def render(track, out_wav):
+def render(track, out_wav, tele=None):
+    """Sing `track` into out_wav; `tele`: also record the telemetry a 3D head replays."""
     with tempfile.NamedTemporaryFile("w", suffix=".json", delete=False) as f:
         json.dump(track, f)
     try:
-        subprocess.run([str(CHIMERA), "render", "track", f.name, out_wav.removesuffix(".wav")], check=True, capture_output=True)
+        extra = ["--tele", str(tele)] if tele else []
+        subprocess.run([str(CHIMERA), "render", "track", f.name, out_wav.removesuffix(".wav"), *extra], check=True, capture_output=True)
     finally:
         os.unlink(f.name)
 

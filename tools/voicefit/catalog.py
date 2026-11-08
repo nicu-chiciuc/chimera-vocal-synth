@@ -3,8 +3,10 @@
   catalog.py <dir> [--train 0-3] [--hold 4-7]
 
 Writes <dir>/candidates.json: the singer's lines (text, times, training or held-out) and every
-candidate voice: the untuned default (fit/default-full.wav) and each <dir>/fit*/ with a best.json
-(its best-full.wav, rendered if missing). For each: the settings, the acoustic score per split
+candidate voice: the untuned default (<dir>/default/) and each <dir>/fit*/ with a best.json, each
+sung over the whole excerpt (best-full.wav, and best-full.tele for the page's 3D head; rendered
+if missing). A fit's best.json can be copied into another excerpt's folder (the whole song) to
+hear the same voice there. For each: the settings, the body, the acoustic score per split
 (compare.py), and the independent judges per split (judge.py: speaker similarity and Whisper's
 word error). Scores and judges are cached in <candidate dir>/catalog-cache.json, keyed by the
 render's size and time, so adding a fit only measures the new one.
@@ -48,32 +50,46 @@ def main():
         split = next((k for k, w in splits.items() if i in w), None)
         lines.append({"i": i, "text": p["text"], "t0": round(ph[0][1] - 0.15, 3), "t1": round(ph[-1][2] + 0.25, 3), "split": split})
 
+    # the app's profiles, by the settings they were made from (a fit's best.json may be copied to
+    # another excerpt's folder: the settings are what identify it)
+    key_of = lambda p: json.dumps(p, sort_keys=True)  # noqa: E731
     voices = {}
     for f in (REPO / "src" / "voices" / "local").glob("*.json"):
         v = json.load(open(f))
-        if v.get("fit"):
-            voices[str(pathlib.Path(v["fit"]).resolve())] = f.stem
+        if v.get("fit") and os.path.exists(v["fit"]):
+            voices[key_of(json.load(open(v["fit"]))["params"])] = f.stem
 
-    cands = []
-    if (d / "fit" / "default-full.wav").exists():
-        cands.append({"id": "default", "dir": d / "fit", "wav": d / "fit" / "default-full.wav", "label": "Untuned male", "about": "The engine's male body and source defaults, on the singer's timing, pitch and dynamics.", "params": None})
+    defaults = {n: dflt for n, _, _, dflt in fit.PARAMS}
+    found = [(d / "default", defaults, ["Untuned male", "The engine's male body and source defaults, on the singer's timing, pitch and dynamics."])]
     for fd in sorted(d.glob("fit*")):
-        best = fd / "best.json"
-        if not best.exists():
-            continue
-        params = json.load(open(best))["params"]
-        wav = fd / "best-full.wav"
-        if not wav.exists():
+        if (fd / "best.json").exists():
+            about = (fd / "about.txt").read_text().strip().split("\n", 1) if (fd / "about.txt").exists() else [fd.name, ""]
+            found.append((fd, json.load(open(fd / "best.json"))["params"], about))
+    cands = []
+    for fd, params, about in found:
+        wav, tele = fd / "best-full.wav", fd / "best-full.tele"
+        if not wav.exists() or not tele.exists():
             if level is None:
                 level = [round(float(v), 2) for v in fit.level_curve(target, track)]
-            fit.render(fit.track_for(track, params, None, level, track["duration"]), str(wav))
-        about = (fd / "about.txt").read_text().strip().split("\n", 1) if (fd / "about.txt").exists() else [fd.name, ""]
-        cands.append({"id": fd.name, "dir": fd, "wav": wav, "label": about[0], "about": about[1].strip() if len(about) > 1 else "", "params": params, "voice": voices.get(str(best.resolve()))})
+            fd.mkdir(exist_ok=True)
+            fit.render(fit.track_for(track, params, None, level, track["duration"]), str(wav), tele)
+            print(f"rendered {fd.name}", flush=True)
+        cands.append({
+            "id": "default" if fd.name == "default" else fd.name,
+            "dir": fd,
+            "wav": wav,
+            "tele": tele,
+            "label": about[0],
+            "about": about[1].strip() if len(about) > 1 else "",
+            "params": None if params is defaults else params,
+            "body": {"female": 0, "child": 0, "size": params["scale"], "pharynx": params["pharynx"]},
+            "voice": voices.get(key_of(params)),
+        })
 
     judge = None
     out = []
     for c in cands:
-        cache_path = c["dir"] / ("catalog-cache-default.json" if c["id"] == "default" else "catalog-cache.json")
+        cache_path = c["dir"] / "catalog-cache.json"
         cache = json.load(open(cache_path)) if cache_path.exists() else {}
         key = stamp(c["wav"]) + "|" + opt["--train"] + "|" + opt["--hold"]
         if cache.get("key") != key:
@@ -93,6 +109,8 @@ def main():
             "label": c["label"],
             "about": c["about"],
             "wav": str(c["wav"].relative_to(d)),
+            "tele": str(c["tele"].relative_to(d)),
+            "body": c["body"],
             "voice": c.get("voice"),
             "params": c["params"],
             "scores": cache["scores"],

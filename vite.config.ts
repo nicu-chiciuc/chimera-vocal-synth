@@ -4,21 +4,34 @@ import fs from "node:fs";
 import path from "node:path";
 
 /**
- * The comparison page's data (`?voicefit`, dev server only): `/voicefit/<file>` serves a voice fit's
- * folder, read-only (tools/voicefit: the recording, the band, the renders, candidates.json). The
- * folder is `VOICEFIT_DIR`, or
+ * The comparison page's data (`?voicefit=<set>`, dev server only): `/voicefit/<set>/<file>` serves
+ * a set's folder read-only (tools/voicefit: the recording, the band, the renders and their
+ * telemetry, candidates.json), and `/voicefit/sets.json` lists the sets (the folders holding a
+ * candidates.json). The root is `VOICEFIT_DIR`, or
  * `out/voicefit` (gitignored; a link to the fit's folder). Nothing of it is built or published:
  * the recording is usually someone else's.
  */
 function voicefit(): Plugin {
   const root = () => path.resolve(process.env.VOICEFIT_DIR ?? "out/voicefit");
-  const TYPES: Record<string, string> = { ".wav": "audio/wav", ".json": "application/json" };
+  const TYPES: Record<string, string> = { ".wav": "audio/wav", ".json": "application/json", ".tele": "application/octet-stream" };
   return {
     name: "voicefit",
     apply: "serve",
     configureServer(server) {
       server.middlewares.use("/voicefit/", (req, res) => {
         const rel = decodeURIComponent((req.url ?? "").split("?")[0]).replace(/^\/+/, "");
+        // the sets: folders holding a candidates.json
+        if (rel === "sets.json") {
+          let sets: string[] = [];
+          try {
+            const dir = root();
+            sets = fs.readdirSync(dir).filter((d) => /^[\w-]+$/.test(d) && fs.existsSync(path.join(dir, d, "candidates.json")));
+          } catch {
+            // no folder: no sets
+          }
+          res.setHeader("Content-Type", "application/json");
+          return res.end(JSON.stringify(sets.sort()));
+        }
         const type = TYPES[path.extname(rel)];
         if (!/^[\w.-]+(\/[\w.-]+)*$/.test(rel) || rel.split("/").includes("..") || !type) {
           res.statusCode = 400;

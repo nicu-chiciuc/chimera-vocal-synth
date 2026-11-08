@@ -20,6 +20,7 @@
 //! curve alone sets the pitch.
 
 use crate::js::fixed;
+use crate::render::{TELE_HOP, TeleRecorder};
 use crate::{Ctx, FS, peak, wav_name};
 use chimera::anatomy::human::{ArticKey, ArticPatch, BodyMix};
 use chimera::control::score::ControlKey;
@@ -132,7 +133,20 @@ fn chunks(p: &Phrase) -> Result<Vec<Chunk>, String> {
 }
 
 pub fn render(ctx: &Ctx, a: &[String]) -> Result<(), String> {
-    let input = a.first().ok_or("render track <track.json> <out>")?;
+    // `--tele <file>`: also record the voice's telemetry (render notes' format), so a 3D head
+    // can replay the performance in the app
+    let mut tele_out: Option<String> = None;
+    let mut rest = Vec::new();
+    let mut it = a.iter();
+    while let Some(x) = it.next() {
+        if x == "--tele" {
+            tele_out = Some(it.next().ok_or("--tele needs a file")?.clone());
+        } else {
+            rest.push(x.clone());
+        }
+    }
+    let a = &rest[..];
+    let input = a.first().ok_or("render track <track.json> <out> [--tele voice.tele]")?;
     let out_name = wav_name(a.get(1).map(String::as_str).unwrap_or("out/track"));
     let text = std::fs::read_to_string(input).map_err(|e| format!("{input}: {e}"))?;
     let tr: Track = serde_json::from_str(&text).map_err(|e| format!("{input}: {e}"))?;
@@ -199,6 +213,8 @@ pub fn render(ctx: &Ctx, a: &[String]) -> Result<(), String> {
     let mut out = vec![0f32; n];
     let hop = 240; // 5 ms
     let mut last_f0 = first_f0;
+    let mut rec = tele_out.as_ref().map(|_| TeleRecorder::new(&mut v));
+    let mut next_t = TELE_HOP;
     for (i, block) in out.chunks_mut(hop).enumerate() {
         let t = (i * hop) as f64 / FS;
         let f = tr.f0.at(t);
@@ -212,11 +228,28 @@ pub fn render(ctx: &Ctx, a: &[String]) -> Result<(), String> {
             patch.pressure = Some(base_pressure);
         }
         v.set_source(&patch);
-        for sub in block.chunks_mut(128) {
-            v.render(sub);
+        // 128-sample quanta, cut where a telemetry frame is due (frame k is the state at k·TELE_HOP)
+        let base = i * hop;
+        let mut off = 0;
+        while off < block.len() {
+            let mut end = block.len().min(off + 128);
+            if rec.is_some() {
+                end = end.min(next_t - base);
+            }
+            v.render(&mut block[off..end]);
+            off = end;
+            if let Some(r) = rec.as_mut()
+                && base + off == next_t
+            {
+                r.snap(&mut v)?;
+                next_t += TELE_HOP;
+            }
         }
     }
     ctx.write_wav(&out_name, &out)?;
+    if let (Some(path), Some(r)) = (&tele_out, rec) {
+        std::fs::write(path, r.bytes(tr.body)).map_err(|e| format!("{path}: {e}"))?;
+    }
     println!(
         "{out_name}: {} s, peak {}, {} phrases in {groups} breath groups, worst group end off by {} ms",
         fixed(n as f64 / FS, 2),

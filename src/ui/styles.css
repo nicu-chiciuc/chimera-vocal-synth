@@ -2877,6 +2877,10 @@ input[type="range"]::-moz-range-thumb {
   color: var(--vf-text);
 }
 
+.vf-stage .screen-body {
+  min-height: min(64vh, 640px);
+}
+
 .vf-verse {
   display: grid;
   grid-template-columns: minmax(0, 1fr) auto;

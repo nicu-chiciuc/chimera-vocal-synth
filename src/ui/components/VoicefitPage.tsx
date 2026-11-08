@@ -1,18 +1,31 @@
 /**
- * The voice-fit comparison page (`?voicefit`, dev server only): every candidate voice from
- * tools/voicefit against the recording it was fitted to, the whole verse or line by line.
+ * The voice-fit comparison page (`?voicefit=<set>`, dev server only): every candidate voice from
+ * tools/voicefit against the recording it copies, the whole excerpt or line by line, with a 3D
+ * performer on a stage singing whatever plays. A set is a folder under the dev server's voicefit
+ * folder (`song`, `verse1`, ...) with a candidates.json (tools/voicefit/catalog.py).
  *
  * Blind by default: candidates get letters in an order shuffled once per browser, and their names
  * and measures stay hidden until Reveal. Every play is level-matched to the singer over the same
  * stretch, and by default the band (the separated instrumental) plays under it at the record's
- * own balance, to hear how each voice sits in the song.
+ * own balance. The performer replays the playing voice's recorded telemetry; while the singer
+ * plays, it moves as the voice it last showed (every voice sings the same phones on the same
+ * timeline, so it keeps in time with him).
  *
  * Keys: up/down pick a line, 0 or C plays the singer, 1-9 the candidates, space the line through
  * all of them, Esc stops.
  */
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { lazy, Suspense, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Chip, Screen } from "./Screen.tsx";
+import type { HeadFeed } from "./AnatomyView3D.tsx";
 import { voiceById } from "../../voices/index.ts";
+import { TeleTrack } from "../../show/tele.ts";
+import { getModel } from "../useModel.ts";
+import { VoiceModel } from "../analysis.ts";
+import type { BodyMix } from "../../wasm/types.ts";
+import type { ViewFlags } from "../render/anatomy.ts";
+
+// three.js loads with the stage
+const AnatomyView3D = lazy(() => import("./AnatomyView3D.tsx").then((m) => ({ default: m.AnatomyView3D })));
 
 type Split = "train" | "heldout";
 
@@ -35,6 +48,9 @@ interface Candidate {
   label: string;
   about: string;
   wav: string;
+  /** the voice's telemetry over the excerpt (render track --tele) */
+  tele?: string;
+  body?: BodyMix;
   voice?: string | null;
   params: Record<string, number> | null;
   scores: Record<Split, { score: number; groups: Record<string, number> }>;
@@ -50,17 +66,24 @@ interface Catalog {
   candidates: Candidate[];
 }
 
-/** a stretch of the timeline: one line, or the whole verse */
+/** a stretch of the timeline: one line, or the whole excerpt */
 interface Span {
   key: string;
   t0: number;
   t1: number;
 }
 
-const BASE = `${import.meta.env.BASE_URL}voicefit/`;
+const ROOT = `${import.meta.env.BASE_URL}voicefit/`;
 const TARGET = "target";
 const BACKING = "backing";
 const LETTERS = "ABCDEFGHIJKLMNOPQRSTUVWXYZ";
+/** the performer's look: airflow and sound pressure on, no measurement labels */
+const VIEW: ViewFlags = { pressure: true, particles: true, grid: false, calipers: false };
+
+function setName(): string {
+  const s = new URLSearchParams(window.location.search).get("voicefit");
+  return s && /^[\w-]+$/.test(s) ? s : "song";
+}
 
 /** A shuffle that stays the same in this browser (so letters keep their meaning across reloads). */
 function blindOrder(ids: string[]): string[] {
@@ -92,8 +115,12 @@ function rms(b: AudioBuffer, t0: number, t1: number): number {
 }
 
 const pct = (x: number) => `${Math.round(x * 100)} %`;
+const clock = (t: number) => `${Math.floor(t / 60)}:${String(Math.floor(t % 60)).padStart(2, "0")}`;
 
 export function VoicefitPage() {
+  const set = setName();
+  const base = `${ROOT}${set}/`;
+  const [sets, setSets] = useState<string[]>([]);
   const [cat, setCat] = useState<Catalog | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [blind, setBlind] = useState(true);
@@ -103,24 +130,35 @@ export function VoicefitPage() {
   /** what is playing: voice id and span key */
   const [playing, setPlaying] = useState<{ id: string; span: string } | null>(null);
   const [loaded, setLoaded] = useState(0);
+  const [teles, setTeles] = useState<Map<string, TeleTrack>>(new Map());
+  /** the voice whose movements the performer shows */
+  const [shown, setShown] = useState<string | null>(null);
+  const [, setTick] = useState(0);
   const ctx = useRef<AudioContext | null>(null);
   const buffers = useRef(new Map<string, AudioBuffer>());
   const current = useRef<AudioBufferSourceNode | null>(null);
   const musicSrc = useRef<AudioBufferSourceNode | null>(null);
   const queue = useRef<number | null>(null);
+  /** where the playing span is on the timeline: started at audio time `at`, from t0 to t1 */
+  const clockRef = useRef<{ at: number; t0: number; t1: number } | null>(null);
+  const epoch = useRef(0);
 
   useEffect(() => {
-    fetch(BASE + "candidates.json", { cache: "no-store" })
+    fetch(ROOT + "sets.json", { cache: "no-store" })
+      .then((r) => (r.ok ? (r.json() as Promise<string[]>) : []))
+      .then(setSets)
+      .catch(() => {});
+    fetch(base + "candidates.json", { cache: "no-store" })
       .then(async (r) => {
-        if (!r.ok) throw new Error(`candidates.json: ${r.status} ${await r.text()}`);
+        if (!r.ok) throw new Error(`${set}/candidates.json: ${r.status} ${await r.text()}`);
         setCat((await r.json()) as Catalog);
       })
       .catch((e) => setError(e instanceof Error ? e.message : String(e)));
-  }, []);
+  }, [base, set]);
 
   const audio = useCallback(() => (ctx.current ??= new AudioContext()), []);
 
-  // decode the recording, the band and every render once
+  // decode the recording, the band and every render once; load each voice's telemetry
   useEffect(() => {
     if (!cat) return;
     const files: [string, string][] = [[TARGET, cat.target], ...cat.candidates.map((c) => [c.id, c.wav] as [string, string])];
@@ -128,7 +166,7 @@ export function VoicefitPage() {
     let alive = true;
     void Promise.all(
       files.map(async ([id, file]) => {
-        const r = await fetch(BASE + file);
+        const r = await fetch(base + file);
         if (!r.ok) throw new Error(`${file}: ${r.status}`);
         const b = await audio().decodeAudioData(await r.arrayBuffer());
         if (!alive) return;
@@ -136,17 +174,26 @@ export function VoicefitPage() {
         setLoaded((n) => n + 1);
       }),
     ).catch((e) => setError(e instanceof Error ? e.message : String(e)));
+    void Promise.all(
+      cat.candidates
+        .filter((c) => c.tele)
+        .map(async (c) => {
+          const r = await fetch(base + c.tele);
+          return r.ok ? ([c.id, new TeleTrack(await r.arrayBuffer())] as const) : null;
+        }),
+    ).then((all) => alive && setTeles(new Map(all.filter((x) => x !== null))));
     return () => {
       alive = false;
     };
-  }, [cat, audio]);
+  }, [cat, audio, base]);
 
   const order = useMemo(() => (cat ? (blind ? blindOrder(cat.candidates.map((c) => c.id)) : cat.candidates.map((c) => c.id)) : []), [cat, blind]);
   const byId = useMemo(() => new Map(cat?.candidates.map((c) => [c.id, c]) ?? []), [cat]);
   const spans = useMemo<Span[]>(() => cat?.lines.map((l) => ({ key: `line${l.i}`, t0: l.t0, t1: l.t1 })) ?? [], [cat]);
-  const verse = useMemo<Span | null>(() => (cat && cat.lines.length ? { key: "verse", t0: cat.lines[0].t0, t1: cat.lines[cat.lines.length - 1].t1 } : null), [cat]);
+  const whole = useMemo<Span | null>(() => (cat && cat.lines.length ? { key: "whole", t0: Math.max(0, cat.lines[0].t0 - 1), t1: cat.lines[cat.lines.length - 1].t1 + 4 } : null), [cat]);
   const name = (id: string) => (id === TARGET ? "Singer" : blind ? `Voice ${LETTERS[order.indexOf(id)]}` : (byId.get(id)?.label ?? id));
   const short = (id: string) => (id === TARGET ? "Singer" : blind ? LETTERS[order.indexOf(id)] : String(order.indexOf(id) + 1));
+  const performer = shown && teles.has(shown) ? shown : (order.find((id) => teles.has(id)) ?? null);
 
   const stop = useCallback(() => {
     if (queue.current !== null) clearTimeout(queue.current);
@@ -158,6 +205,7 @@ export function VoicefitPage() {
     }
     musicSrc.current?.stop();
     musicSrc.current = null;
+    clockRef.current = null;
     setPlaying(null);
   }, []);
 
@@ -166,6 +214,7 @@ export function VoicefitPage() {
       const b = buffers.current.get(id), t = buffers.current.get(TARGET);
       if (!b || !t) return;
       stop();
+      if (id !== TARGET) setShown(id);
       const ac = audio();
       void ac.resume();
       const src = ac.createBufferSource();
@@ -177,6 +226,7 @@ export function VoicefitPage() {
         current.current = null;
         musicSrc.current?.stop();
         musicSrc.current = null;
+        clockRef.current = null;
         setPlaying(null);
         if (then) queue.current = window.setTimeout(then, 350);
       };
@@ -193,6 +243,8 @@ export function VoicefitPage() {
         musicSrc.current = m;
       }
       src.start(at, span.t0, span.t1 - span.t0);
+      clockRef.current = { at, t0: span.t0, t1: span.t1 };
+      epoch.current++;
     },
     [audio, stop, music],
   );
@@ -215,6 +267,19 @@ export function VoicefitPage() {
     [order, playLine],
   );
 
+  /** the playhead on the excerpt's timeline, or null */
+  const now = useCallback((): number | null => {
+    const c = clockRef.current, ac = ctx.current;
+    if (!c || !ac) return null;
+    return Math.min(c.t1, c.t0 + Math.max(0, ac.currentTime - c.at));
+  }, []);
+
+  // the time readout while something plays
+  useEffect(() => {
+    const id = setInterval(() => clockRef.current && setTick((n) => n + 1), 250);
+    return () => clearInterval(id);
+  }, []);
+
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
       if (!cat) return;
@@ -234,18 +299,40 @@ export function VoicefitPage() {
 
   useEffect(() => () => stop(), [stop]);
 
+  // the performer: one feed per shown voice, reading the playhead each frame
+  const feed = useMemo<HeadFeed | null>(() => {
+    const c = performer ? byId.get(performer) : undefined;
+    const track = performer ? teles.get(performer) : undefined;
+    if (!c || !track) return null;
+    const model = getModel(c.body ?? track.body, track.sampleRate);
+    let last = VoiceModel.articFromArray(track.message(0).t.artic);
+    return {
+      model,
+      view: VIEW,
+      stage: true,
+      frame: () => {
+        const t = now();
+        if (t === null) return { tele: null, artic: last, epoch: epoch.current };
+        const msg = track.message(track.indexAt(t));
+        last = VoiceModel.articFromArray(msg.t.artic);
+        return { tele: msg, artic: last, epoch: epoch.current };
+      },
+    };
+  }, [performer, byId, teles, now]);
+
   if (error)
     return (
       <div className="vf">
         <Screen title="Voice fit" sub="not loaded">
           <p className="vf-msg">
-            {error}. Build the catalog with <code>tools/voicefit/catalog.py &lt;fit dir&gt;</code> and point the dev server at that folder (<code>VOICEFIT_DIR</code>, or a link at <code>out/voicefit</code>).
+            {error}. Build the catalog with <code>tools/voicefit/catalog.py &lt;fit dir&gt;</code> and point the dev server at the folder that holds it (<code>VOICEFIT_DIR</code>, or a link at <code>out/voicefit</code>).
           </p>
         </Screen>
       </div>
     );
   if (!cat) return <div className="vf" />;
   const total = cat.candidates.length + 1 + (cat.accompaniment ? 1 : 0);
+  const t = now();
 
   const buttons = (span: Span, onPlay: (id: string) => void) =>
     [TARGET, ...order].map((id) => (
@@ -263,6 +350,31 @@ export function VoicefitPage() {
 
   return (
     <div className="vf">
+      <Screen
+        className="vf-stage"
+        title="Stage"
+        sub={`${playing ? `${name(playing.id)} · ${clock(t ?? 0)}` : "press play"}${performer ? ` · moves of ${name(performer)}` : ""}`}
+        tools={
+          sets.length > 1 ? (
+            <>
+              {sets.map((s) => (
+                <Chip key={s} on={s === set} onClick={() => (window.location.search = `?voicefit=${s}`)}>
+                  {s}
+                </Chip>
+              ))}
+            </>
+          ) : undefined
+        }
+      >
+        {feed ? (
+          <Suspense fallback={null}>
+            <AnatomyView3D key={performer ?? ""} feed={feed} readouts={false} />
+          </Suspense>
+        ) : (
+          <p className="vf-msg">{teles.size ? "" : "Loading the performer…"}</p>
+        )}
+      </Screen>
+
       <Screen
         title="Voice fit"
         sub={`${cat.title} · ${loaded < total ? `loading ${loaded}/${total}` : "↑↓ line · 0 singer · 1-9 voice · space all · esc stop"}`}
@@ -285,11 +397,11 @@ export function VoicefitPage() {
           </>
         }
       >
-        {verse && (
+        {whole && (
           <section className="vf-verse">
-            <span className="vf-text">Whole verse</span>
-            <span className="vf-split">{Math.round(verse.t1 - verse.t0)} s</span>
-            <span className="vf-plays">{buttons(verse, (id) => play(id, verse))}</span>
+            <span className="vf-text">{cat.lines.length > 10 ? "Whole song" : "Whole excerpt"}</span>
+            <span className="vf-split">{clock(whole.t1 - whole.t0)}</span>
+            <span className="vf-plays">{buttons(whole, (id) => play(id, whole))}</span>
           </section>
         )}
         <ol className="vf-lines">

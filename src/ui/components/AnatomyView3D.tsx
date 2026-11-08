@@ -36,6 +36,8 @@ export interface HeadFeed {
   maxDpr?: number;
   /** which way the head turns to show its face (see Anatomy3D.facing) */
   facing?: 1 | -1;
+  /** a performer: hat, torso and guitar, framed to show them (see Anatomy3D.stage) */
+  stage?: boolean;
 }
 
 const ease = (t: number) => (t < 0.5 ? 4 * t * t * t : 1 - (-2 * t + 2) ** 3 / 2);
@@ -76,6 +78,7 @@ export function AnatomyView3D(props: { slots?: SlotsFn; info?: InfoFn; showForma
     const r = new Anatomy3D();
     r.centred = !readoutsRef.current;
     r.facing = feedRef.current?.facing ?? 1;
+    r.stage = feedRef.current?.stage ?? false;
     const glow = new Glow();
     const camera = r.camera;
     const controls = new OrbitControls(camera, canvas);
@@ -85,7 +88,7 @@ export function AnatomyView3D(props: { slots?: SlotsFn; info?: InfoFn; showForma
     controls.zoomSpeed = 0.8;
     controls.screenSpacePanning = true;
     controls.minDistance = 20;
-    controls.maxDistance = 220;
+    controls.maxDistance = r.stage ? 480 : 220;
 
     // camera moves (the opening turn from the side view, double-click home): orbit round the target
     const tween = { on: false, t: 0, dur: 1, p0: new THREE.Vector3(), q0: new THREE.Vector3(), p1: new THREE.Vector3(), q1: new THREE.Vector3() };
