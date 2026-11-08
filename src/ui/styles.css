@@ -2859,26 +2859,69 @@ input[type="range"]::-moz-range-thumb {
   }
 }
 
-/* ---------- the voice-fit comparison page (?voicefit): the whole verse and each line, as the
-   singer sang it and as each candidate does */
-/* A working page, read for minutes at a time: a solid sans at reading sizes and bright, framed
-   controls, not the wall's thin single-stroke display face. */
+/* ---------- the voice-fit playthrough (?voicefit): a song sung by each fitted voice, the 3D
+   performer above the player. A solid sans at reading sizes and bright, framed controls, not the
+   wall's thin single-stroke display face. */
 .vf {
   --vf-text: #eef6f8;
   --vf-dim: #a9c7d8;
   --vf-edge: #4f7d99;
   display: grid;
   grid-template-columns: minmax(0, 1fr);
-  gap: 16px;
+  gap: 14px;
   padding: 16px;
+  max-width: 1200px;
+  margin: 0 auto;
   min-height: 100vh;
   align-content: start;
   font-family: "Archivo", system-ui, -apple-system, "Segoe UI", sans-serif;
   color: var(--vf-text);
 }
 
-.vf-stage .screen-body {
-  min-height: min(64vh, 640px);
+.vf-head {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: 6px 16px;
+}
+
+.vf-title {
+  margin: 0;
+  font-size: 26px;
+  font-weight: 700;
+  letter-spacing: 0.02em;
+}
+
+.vf-sub {
+  font-size: 15px;
+  color: var(--vf-dim);
+}
+
+.vf-links {
+  margin-left: auto;
+  display: flex;
+  gap: 18px;
+  font-size: 15px;
+}
+
+.vf-links a {
+  color: var(--blue);
+  text-decoration: none;
+  border-bottom: 1px solid var(--blue-dim);
+}
+
+.vf-links a:hover {
+  color: #fff;
+  border-color: #fff;
+}
+
+/* the 3D view fills its box (.anatomy is absolutely placed) */
+.vf-stage {
+  position: relative;
+  height: min(66vh, 700px);
+  min-height: 320px;
+  border: 1px solid var(--vf-edge);
+  background: #000;
 }
 
 /* the player: voices to switch between, the transport, the line being sung */
@@ -2957,48 +3000,33 @@ input[type="range"]::-moz-range-thumb {
   min-height: 1.3em;
 }
 
-.vf-verse {
-  display: grid;
-  grid-template-columns: minmax(0, 1fr) auto;
-  gap: 8px 12px;
+.vf-opts {
+  display: flex;
+  flex-wrap: wrap;
   align-items: center;
-  margin: 8px 10px 4px;
-  padding: 12px;
-  border: 2px solid var(--amber);
-  border-radius: 8px;
-  background: #140f05;
+  gap: 10px 22px;
 }
 
-.vf-verse .vf-text {
-  font-weight: 700;
+.vf-check {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 16px;
+  font-weight: 600;
+  cursor: pointer;
 }
 
-.vf .screen {
-  border-color: var(--vf-edge);
-  background: #05090c;
+.vf-check input {
+  width: 20px;
+  height: 20px;
+  accent-color: var(--blue);
+  cursor: pointer;
 }
 
-.vf .screen-head {
-  padding: 14px 16px 4px;
-  gap: 8px 16px;
-}
-
-.vf .screen-title {
-  font-family: inherit;
-  font-size: 18px;
-  font-weight: 700;
-  letter-spacing: 0.04em;
-  text-transform: none;
-  color: var(--vf-text);
-  text-shadow: none;
-}
-
-.vf .screen-sub {
-  font-size: 14px;
-  letter-spacing: 0;
-  text-transform: none;
+.vf-keys {
+  margin-left: auto;
+  font-size: 13px;
   color: var(--vf-dim);
-  white-space: normal;
 }
 
 /* every button on the page: big, framed in a visible colour, lit when chosen or playing */
@@ -3034,17 +3062,6 @@ input[type="range"]::-moz-range-thumb {
   box-shadow: 0 0 10px rgba(79, 182, 242, 0.5);
 }
 
-.vf .chip.vf-singer {
-  border-color: var(--amber);
-  color: var(--amber);
-}
-
-.vf .chip.vf-singer.on {
-  background: var(--amber);
-  color: #1d1300;
-  box-shadow: 0 0 10px rgba(255, 179, 64, 0.5);
-}
-
 .vf-msg {
   margin: 12px 16px 16px;
   color: var(--vf-dim);
@@ -3052,77 +3069,8 @@ input[type="range"]::-moz-range-thumb {
   line-height: 1.5;
 }
 
-.vf-lines {
-  list-style: none;
-  margin: 0;
-  padding: 8px 10px 14px;
-  display: flex;
-  flex-direction: column;
-  gap: 6px;
-}
-
-.vf-line {
-  display: grid;
-  grid-template-columns: minmax(0, 1fr) auto;
-  gap: 8px 12px;
-  align-items: center;
-  padding: 10px 12px;
-  border: 2px solid transparent;
-  border-radius: 8px;
-  cursor: pointer;
-}
-
-.vf-line:hover {
-  background: #0a141c;
-}
-
-.vf-line.on {
-  border-color: var(--blue);
-  background: #0a1824;
-}
-
-.vf-text {
-  color: var(--vf-text);
-  font-size: 19px;
-  font-weight: 500;
-  min-width: 0;
-}
-
-.vf-split {
-  font-size: 13px;
-  font-weight: 600;
-  color: var(--vf-dim);
-}
-
 .vf-plays {
-  grid-column: 1 / -1;
   display: flex;
   flex-wrap: wrap;
   gap: 8px;
-}
-
-.vf-table-wrap {
-  overflow-x: auto;
-  padding: 8px 16px 16px;
-}
-
-.vf-table {
-  border-collapse: collapse;
-  font-size: 15px;
-  font-variant-numeric: tabular-nums;
-  color: var(--vf-text);
-}
-
-.vf-table th,
-.vf-table td {
-  padding: 8px 18px 8px 0;
-  text-align: left;
-  border-bottom: 1px solid var(--vf-edge);
-  white-space: nowrap;
-}
-
-.vf-table th {
-  font-weight: 700;
-  font-size: 13px;
-  color: var(--vf-dim);
 }
