@@ -8,6 +8,7 @@ mod compare;
 mod diagnose;
 mod js;
 mod render;
+mod track;
 mod wav;
 
 use chimera::anatomy::human::{BODY_CHILD, BODY_FEMALE, BODY_MALE, BodyMix, HumanBody};
@@ -24,6 +25,8 @@ usage: chimera <command> [args] [--float]
   render beatbox [outdir] [preset name | pattern] [male|female|child] [bpm] [bars]
   render creature [creatureId] [outdir]
   render vowels  [male|female|child] [out]
+  render track   <track.json> <out>  (a recording's aligned phones and pitch curve, sung with
+                 the track's voice settings; see crates/chimera-cli/src/track.rs)
   diagnose       [outdir]
   compare csd    [csd-dir] [outdir] [--songs a|b|all|en001a,…] [--body female] [--jobs n]
                  [--against earlier/score.json]  (score.json: distance to the singer, and the verdict)
@@ -106,6 +109,7 @@ fn run(args: Vec<String>) -> Result<(), String> {
                 "beatbox" => render::beatbox(&ctx, rest),
                 "creature" => render::creature(&ctx, rest),
                 "vowels" => render::vowels(&ctx, rest),
+                "track" => track::render(&ctx, rest),
                 _ => Err(format!("unknown render kind {kind:?}\n\n{USAGE}")),
             }
         }
