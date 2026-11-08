@@ -2,7 +2,7 @@
 sung with `chimera render track` and scored with compare.py.
 
   fit.py <dir> [--train 0-3] [--hold 4-7] [--gens 40] [--pop 16] [--seed 1]
-         [--from <dir>/fit/best.json] [--out fit]
+         [--from <dir>/fit/best.json] [--out fit] [--speaker]
 
 <dir> holds target.wav and track.json (prepare.py). The fit sees only the training phrases; the
 held-out phrases are scored at the end to show whether the voice carries over. Writes
@@ -106,9 +106,42 @@ def render(track, out_wav):
 
 _ctx = {}
 
+# --speaker: a seventh group, how unlike the singer the ECAPA speaker embedding of the training
+# phrases is. Round 3 of the Hurt fit won on the six acoustic groups and lost speaker similarity
+# on held-out phrases (0.222 -> 0.119): without it the fit trades identity for score.
+SPEAKER_TOP = 0.6  # similarity at which the cost is 0
+SPEAKER_UNIT = 0.1
 
-def _init(target, base, which, level):
+
+class Speaker:
+    def __init__(self, target, track, which):
+        import torch
+        from speechbrain.inference.speaker import EncoderClassifier
+
+        self.torch = torch
+        self.enc = EncoderClassifier.from_hparams(
+            "speechbrain/spkrec-ecapa-voxceleb", savedir=str(pathlib.Path.home() / ".cache/chimera-target/models/ecapa"), run_opts={"device": "cpu"}
+        )
+        self.spans = []
+        for i, p in enumerate(track["phrases"]):
+            if which is None or i in which:
+                ph = [x for w in p["words"] for x in w["phones"]]
+                self.spans.append((ph[0][1] - 0.1, ph[-1][2] + 0.2))
+        self.ref = self.embed(target)
+
+    def embed(self, path):
+        y = librosa.load(path, sr=16000)[0]
+        with self.torch.no_grad():
+            e = self.torch.stack([self.enc.encode_batch(self.torch.tensor(y[int(a * 16000) : int(b * 16000)])[None]).squeeze() for a, b in self.spans]).mean(0)
+        return e / e.norm()
+
+    def similarity(self, path):
+        return float(self.ref @ self.embed(path))
+
+
+def _init(target, base, which, level, speaker):
     _ctx.update(base=base, which=which, level=level, tgt=compare.Analysis(target, base, which, base["f0"]))
+    _ctx["speaker"] = Speaker(target, base, which) if speaker else None
 
 
 def _evaluate(x):
@@ -119,6 +152,10 @@ def _evaluate(x):
         render(track_for(_ctx["base"], p, _ctx["which"], _ctx["level"]), wav)
         syn = compare.Analysis(wav, _ctx["base"], _ctx["which"], _ctx["base"]["f0"])
         score, _, gcost = compare.compare(_ctx["tgt"], syn)
+        if _ctx["speaker"]:
+            sim = _ctx["speaker"].similarity(wav)
+            gcost["speaker"] = max(0.0, (SPEAKER_TOP - sim) / SPEAKER_UNIT)
+            score = float(np.mean(list(gcost.values())))
     finally:
         os.unlink(wav)
     return score, gcost
@@ -154,7 +191,8 @@ def main():
     best = (np.inf, None, None)
     log = open(out / "log.jsonl", "w")
     t_start = time.time()
-    with cf.ProcessPoolExecutor(os.cpu_count(), initializer=_init, initargs=(target, base, train, level)) as pool:
+    speaker = "--speaker" in args
+    with cf.ProcessPoolExecutor(os.cpu_count(), initializer=_init, initargs=(target, base, train, level, speaker)) as pool:
         s0, g0 = pool.submit(_evaluate, x0).result()
         print(f"default: {s0:.3f}  " + " ".join(f"{k} {v:.2f}" for k, v in g0.items()), flush=True)
         for gen in range(int(opt["--gens"])):
