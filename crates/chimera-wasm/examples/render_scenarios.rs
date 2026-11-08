@@ -31,7 +31,7 @@ fn render(s: &Value) -> Vec<f32> {
             _ => (0.0, 0.0),
         };
         if (female, child) != (0.0, 0.0) {
-            engine_set_body(h, female, child);
+            engine_set_body(h, female, child, f64::NAN, f64::NAN);
         }
         let mut ops: Vec<&Value> = s["ops"].as_array().unwrap().iter().collect();
         ops.sort_by_key(|o| o["at"].as_u64().unwrap());

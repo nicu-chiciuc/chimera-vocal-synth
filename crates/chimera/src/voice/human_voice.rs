@@ -2,6 +2,7 @@
 //! oversampled internal rate and decimated. The same code renders in real time (the browser's
 //! AudioWorklet, a DAW's audio thread) and offline, sample for sample.
 
+use super::habits::Habits;
 use super::human_airway::HumanAirway;
 use crate::airway::decimator::Decimator;
 use crate::anatomy::geom::Vec2;
@@ -196,6 +197,8 @@ pub struct HumanVoice {
     lim_release: f64,
     /// tissue may compress this far (cm) before the palate stops the articulator
     pub max_penetration: f64,
+    /// the speaker's articulatory habits, applied to gestures as they are scheduled
+    pub habits: Habits,
 }
 
 impl HumanVoice {
@@ -250,6 +253,7 @@ impl HumanVoice {
             lim_hold_n: crate::math::js_round(0.025 * fs_out) as i64,
             lim_release: exp(-1.0 / (0.2 * fs_out)),
             max_penetration: 0.1,
+            habits: Habits::NONE,
         };
         let x = v.artic.x;
         v.airway.apply(&x, 0.0);
@@ -285,9 +289,17 @@ impl HumanVoice {
         self.apply_source();
     }
 
-    /// Add gestures (times on the voice clock).
+    /// Add gestures (times on the voice clock), moved by the speaker's habits.
     pub fn schedule(&mut self, gestures: &[Gesture]) {
-        self.score.add_all(gestures);
+        if self.habits.is_none() {
+            self.score.add_all(gestures);
+            return;
+        }
+        for g in gestures {
+            let mut g = *g;
+            self.habits.apply(&mut g);
+            self.score.add(g);
+        }
     }
 
     /// End the open-ended gestures with this tag now (a sung note's key was released).

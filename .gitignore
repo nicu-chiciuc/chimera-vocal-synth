@@ -1,10 +1,14 @@
 node_modules
+__pycache__
 dist
 out
 *.wav
 .DS_Store
 target/
 src/wasm/chimera.wasm
+
+# voice profiles fitted locally (src/voices/index.ts): often fits to recordings we have no rights to
+src/voices/local/
 
 # duet shows (?show=<id>) are made locally and are never published: often covers of songs we have no rights to
 public/shows/

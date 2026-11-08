@@ -1,80 +1,52 @@
 //! `chimera render track <track.json> <out>`: sing a real recording's performance. The track gives
 //! the singer's phones with their aligned times (ARPAbet, as the Montreal Forced Aligner returns
 //! them), their pitch curve, and optionally a breath-pressure curve; the synth sings those phones
-//! on that timeline at that pitch. The voice itself (body size, source settings) comes from the
-//! track's `anatomy` and `source`, which is what `tools/voicefit/fit.py` searches.
+//! on that timeline at that pitch. The voice is a voice profile (as the app's `src/voices` holds
+//! them): `body` with its build, `source`, `posture` and `habits`, which is what
+//! `tools/voicefit/fit.py` searches.
 //!
 //! ```json
-//! { "body": "male", "duration": 21.0,
-//!   "anatomy": { "scale": 1.0, "pharynx": 1.0 },
+//! { "duration": 21.0,
+//!   "body": { "female": 0, "child": 0, "size": 1.05, "pharynx": 1.2 },
 //!   "source": { "tension": 0.5, "breathiness": 0.2, "fry": 0.1, "roughness": 0.2, "pressure": 8 },
+//!   "posture": { "epilarynx": 0.3 },
+//!   "habits": { "offset": { "larynx": -0.4 }, "reduce": 0.2 },
 //!   "phrases": [ { "words": [ { "phones": [ ["HH", 0.52, 0.60], ["ER1", 0.60, 0.80], ["T", 0.80, 0.86] ] } ] } ],
 //!   "f0": { "hop": 0.005, "hz": [ 0, 98.2, 98.5 ] },
-//!   "pressure": { "hop": 0.005, "values": [ 8.0, 8.2 ] },
-//!   "articulation": { "offset": { "larynx": -0.4 }, "posture": { "epilarynx": 0.3 }, "reduce": 0.2 } }
+//!   "pressure": { "hop": 0.005, "values": [ 8.0, 8.2 ] } }
 //! ```
 //!
 //! Pitch 0 (unvoiced) holds the last pitch. The planner's own pitch gestures are dropped, so the
 //! curve alone sets the pitch.
 
 use crate::js::fixed;
-use crate::{Ctx, FS, body, peak, wav_name};
-use chimera::anatomy::human::{ArticKey, ArticPatch, NEUTRAL};
+use crate::{Ctx, FS, peak, wav_name};
+use chimera::anatomy::human::{ArticKey, ArticPatch, BodyMix};
 use chimera::control::score::ControlKey;
 use chimera::phonetics::english::arpabet_to_segments;
 use chimera::phonetics::planner::{PlanOptions, plan_utterance};
 use chimera::phonetics::{Intonation, Segment};
+use chimera::voice::habits::Habits;
 use chimera::voice::human_voice::{HumanVoice, SourcePatch};
 use serde::Deserialize;
+use std::collections::BTreeMap;
 
 #[derive(Deserialize)]
 struct Track {
-    #[serde(default = "male")]
-    body: String,
+    #[serde(default)]
+    body: BodyMix,
     duration: f64,
     #[serde(default)]
-    anatomy: Anatomy,
-    #[serde(default)]
     source: SourcePatch,
+    /// rest positions of articulators the plans leave alone, by the engine's names
+    #[serde(default)]
+    posture: BTreeMap<String, f64>,
+    #[serde(default)]
+    habits: Habits,
     phrases: Vec<Phrase>,
     f0: Curve,
     #[serde(default)]
     pressure: Option<Curve>,
-    #[serde(default)]
-    articulation: Articulation,
-}
-
-/// The singer's habitual setting: `offset` is added to every planned target of an articulator
-/// (a lower larynx, a wider jaw, more lip protrusion throughout), `posture` is the rest position
-/// of articulators the plans leave alone (epilarynx, ventricular folds, velum). Keys are the
-/// engine's articulator names (`larynx`, `jaw`, `lipProt`, ...).
-#[derive(Deserialize, Default)]
-struct Articulation {
-    #[serde(default)]
-    offset: std::collections::BTreeMap<String, f64>,
-    #[serde(default)]
-    posture: std::collections::BTreeMap<String, f64>,
-    /// 0..1: how far every tongue-body target moves toward the neutral tongue (lax, centralised
-    /// articulation: front vowels' F2 falls, open vowels' F1 falls)
-    #[serde(default)]
-    reduce: f64,
-}
-
-/// The articulators `reduce` pulls toward neutral.
-const REDUCED: [ArticKey; 2] = [ArticKey::TbX, ArticKey::TbY];
-
-fn artic_key(name: &str) -> Result<ArticKey, String> {
-    ArticKey::from_name(name).ok_or_else(|| format!("unknown articulator {name:?}"))
-}
-
-fn male() -> String {
-    "male".into()
-}
-
-#[derive(Deserialize, Default)]
-struct Anatomy {
-    scale: Option<f64>,
-    pharynx: Option<f64>,
 }
 
 #[derive(Deserialize)]
@@ -164,14 +136,8 @@ pub fn render(ctx: &Ctx, a: &[String]) -> Result<(), String> {
     let out_name = wav_name(a.get(1).map(String::as_str).unwrap_or("out/track"));
     let text = std::fs::read_to_string(input).map_err(|e| format!("{input}: {e}"))?;
     let tr: Track = serde_json::from_str(&text).map_err(|e| format!("{input}: {e}"))?;
-    let mut b = body(&tr.body)?;
-    if let Some(s) = tr.anatomy.scale {
-        b.scale = s;
-    }
-    if let Some(p) = tr.anatomy.pharynx {
-        b.pharynx = p;
-    }
-    let mut v = HumanVoice::new(FS, b, 2);
+    let mut v = HumanVoice::new(FS, tr.body.body(), 2);
+    v.habits = tr.habits;
     let first_f0 = tr
         .f0
         .values
@@ -185,19 +151,13 @@ pub fn render(ctx: &Ctx, a: &[String]) -> Result<(), String> {
     src.glide = Some(src.glide.unwrap_or(0.015));
     v.set_source(&src);
     let base_pressure = src.pressure.unwrap_or(8.0);
-    if !tr.articulation.posture.is_empty() {
+    if !tr.posture.is_empty() {
         let mut rest = ArticPatch::default();
-        for (k, x) in &tr.articulation.posture {
-            rest.set(artic_key(k)?, *x);
+        for (k, x) in &tr.posture {
+            rest.set(ArticKey::from_name(k).ok_or_else(|| format!("unknown articulator {k:?}"))?, *x);
         }
         v.set_articulation(&rest, None);
     }
-    let offsets: Vec<(ControlKey, f64)> = tr
-        .articulation
-        .offset
-        .iter()
-        .map(|(k, x)| artic_key(k).map(|k| (ControlKey::from(k), *x)))
-        .collect::<Result<_, _>>()?;
 
     let mut worst = 0.0f64;
     let mut groups = 0;
@@ -214,7 +174,7 @@ pub fn render(ctx: &Ctx, a: &[String]) -> Result<(), String> {
         let mut plan = plan_utterance(
             &c.segs,
             &PlanOptions {
-                body: tr.body.as_str().into(),
+                body: tr.body,
                 t0: start,
                 f0: Some(first_f0),
                 intonation: Some(Intonation::Flat),
@@ -228,19 +188,6 @@ pub fn render(ctx: &Ctx, a: &[String]) -> Result<(), String> {
             g.t0 += shift;
             g.t1 += shift;
             g.targets.remove(ControlKey::F0);
-            let r = tr.articulation.reduce;
-            if r != 0.0 {
-                for k in REDUCED {
-                    if let Some(x) = g.targets.get(k) {
-                        g.targets.set(k, x + r * (NEUTRAL.get(k) - x));
-                    }
-                }
-            }
-            for &(k, dx) in &offsets {
-                if let Some(x) = g.targets.get(k) {
-                    g.targets.set(k, x + dx);
-                }
-            }
         }
         if let Some(last) = plan.segments.last() {
             worst = worst.max((last.t1 + shift - c.t1).abs());

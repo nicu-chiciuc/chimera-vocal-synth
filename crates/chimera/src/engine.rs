@@ -15,6 +15,7 @@ use crate::control::score::{Gesture, GestureScore};
 use crate::creatures::types::CreatureDef;
 use crate::creatures::voice::{CreatureTelemetry, CreatureVoice};
 use crate::phonetics::beatbox::{BeatStep, MAX_SOUND_GESTURES};
+use crate::voice::habits::Habits;
 use crate::voice::human_voice::{HumanVoice, SourcePatch, VoiceTelemetry};
 
 /// Samples per sub-block: the browser's render quantum, kept for every host.
@@ -87,9 +88,10 @@ impl Engine {
     /// new body's default), posture, breath. Allocates (a new airway network).
     pub fn set_body(&mut self, body: impl Into<BodyMix>) -> VoiceInfo {
         let body: BodyMix = body.into();
-        let body = BodyMix::new(body.female, body.child);
+        let body = BodyMix::new(body.female, body.child).with_build(body.size, body.pharynx);
         let prev = core::mem::replace(&mut self.voice, Self::make_voice(self.sample_rate, body));
         self.body = body;
+        self.voice.habits = prev.habits;
         let mut src = SourcePatch::from_source(&prev.source);
         src.f0 = Some(default_f0(body));
         self.voice.set_source(&src);
@@ -106,6 +108,11 @@ impl Engine {
         self.beat.rebase(self.voice.clock - prev.clock);
         self.beat.rewind(self.voice.clock);
         self.info()
+    }
+
+    /// The speaker's articulatory habits, for everything scheduled from now on.
+    pub fn set_habits(&mut self, habits: Habits) {
+        self.voice.habits = habits;
     }
 
     pub fn set_artic(&mut self, values: &ArticPatch, tip_free: Option<bool>) {

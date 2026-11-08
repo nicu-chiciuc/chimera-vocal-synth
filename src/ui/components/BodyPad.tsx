@@ -15,7 +15,8 @@ function toUV(b: BodyMix): [number, number] {
 function fromUV(u: number, v: number, prev: BodyMix): BodyMix {
   const child = q(v);
   const female = child < 1 ? q(0.5 + (u - 0.5) / (1 - Math.min(v, 0.999))) : prev.female;
-  return { female, child };
+  // the speaker's build stays as it was: the pad moves the blend
+  return { ...prev, female, child };
 }
 
 const X = (u: number) => P + u * (W - 2 * P);

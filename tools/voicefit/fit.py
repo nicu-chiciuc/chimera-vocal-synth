@@ -2,7 +2,7 @@
 sung with `chimera render track` and scored with compare.py.
 
   fit.py <dir> [--train 0-3] [--hold 4-7] [--gens 40] [--pop 16] [--seed 1]
-         [--from <dir>/fit/best.json] [--out fit] [--speaker]
+         [--from <dir>/fit/best.json] [--out fit] [--speaker] [--clarity]
 
 <dir> holds target.wav and track.json (prepare.py). The fit sees only the training phrases; the
 held-out phrases are scored at the end to show whether the voice carries over. Writes
@@ -78,20 +78,27 @@ def level_curve(target, track):
     return np.clip(sm - np.median(db[vow]), -15, 6)
 
 
+def profile(p):
+    """The voice profile (src/voices) of a fit's settings: everything but `dyn`, which is how the
+    singer's dynamics drive the breath in a render, not part of the voice. Values are not rounded:
+    the model is chaotic enough that a rounded profile renders a different waveform from the one
+    that was judged."""
+    return {
+        "body": {"female": 0, "child": 0, "size": p["scale"], "pharynx": p["pharynx"]},
+        "source": {k: p[k] for k in ("tension", "breathiness", "fry", "roughness", "brightness", "drift", "pressure")},
+        "posture": {k[5:]: v for k, v in p.items() if k.startswith("rest.")},
+        "habits": {"offset": {k[4:]: v for k, v in p.items() if k.startswith("off.")}, "reduce": p.get("reduce", 0.0)},
+    }
+
+
 def track_for(base, p, which, level, duration=None):
     t = dict(base)
     t["phrases"] = [ph for i, ph in enumerate(base["phrases"]) if which is None or i in which]
     if duration is None:
         duration = max(x[2] for ph in t["phrases"] for w in ph["words"] for x in w["phones"]) + 0.4
     t["duration"] = round(duration, 3)
-    t["anatomy"] = {"scale": p["scale"], "pharynx": p["pharynx"]}
-    t["source"] = {k: p[k] for k in ("tension", "breathiness", "fry", "roughness", "brightness", "drift", "pressure")}
+    t.update(profile(p))
     t["pressure"] = {"hop": compare.HOP / compare.FS, "values": [round(p["pressure"] * 10 ** (p["dyn"] * v / 20), 3) for v in level]}
-    t["articulation"] = {
-        "offset": {k[4:]: v for k, v in p.items() if k.startswith("off.")},
-        "posture": {k[5:]: v for k, v in p.items() if k.startswith("rest.")},
-        "reduce": p.get("reduce", 0.0),
-    }
     return t
 
 
@@ -139,9 +146,39 @@ class Speaker:
         return float(self.ref @ self.embed(path))
 
 
-def _init(target, base, which, level, speaker):
+class Clarity:
+    """--clarity: Whisper's word error on the training phrases, against the words sung. Round 4
+    of the Hurt fit bought speaker similarity with clarity (held-out word error 32 % -> 42 %)."""
+
+    UNIT = 0.1  # each 10 points of word error cost 1
+
+    def __init__(self, track, which):
+        import jiwer
+        from faster_whisper import WhisperModel
+
+        self.jiwer = jiwer
+        self.asr = WhisperModel("small.en", device="cpu", compute_type="int8", cpu_threads=1)
+        self.parts = []
+        for i, p in enumerate(track["phrases"]):
+            if which is None or i in which:
+                ph = [x for w in p["words"] for x in w["phones"]]
+                self.parts.append((p["text"], ph[0][1] - 0.1, ph[-1][2] + 0.2))
+        self.norm = jiwer.Compose([jiwer.ToLowerCase(), jiwer.RemovePunctuation(), jiwer.RemoveMultipleSpaces(), jiwer.Strip(), jiwer.ReduceToListOfListOfWords()])
+
+    def wer(self, path):
+        y = librosa.load(path, sr=16000)[0]
+        heard = []
+        for _, a, b in self.parts:
+            segs, _ = self.asr.transcribe(y[int(a * 16000) : int(b * 16000)], language="en", beam_size=5)
+            heard.append(" ".join(s.text for s in segs))
+        ref = " ".join(t for t, _, _ in self.parts)
+        return self.jiwer.wer(ref, " ".join(heard), reference_transform=self.norm, hypothesis_transform=self.norm)
+
+
+def _init(target, base, which, level, speaker, clarity=False):
     _ctx.update(base=base, which=which, level=level, tgt=compare.Analysis(target, base, which, base["f0"]))
     _ctx["speaker"] = Speaker(target, base, which) if speaker else None
+    _ctx["clarity"] = Clarity(base, which) if clarity else None
 
 
 def _evaluate(x):
@@ -155,7 +192,9 @@ def _evaluate(x):
         if _ctx["speaker"]:
             sim = _ctx["speaker"].similarity(wav)
             gcost["speaker"] = max(0.0, (SPEAKER_TOP - sim) / SPEAKER_UNIT)
-            score = float(np.mean(list(gcost.values())))
+        if _ctx["clarity"]:
+            gcost["clarity"] = _ctx["clarity"].wer(wav) / Clarity.UNIT
+        score = float(np.mean(list(gcost.values())))
     finally:
         os.unlink(wav)
     return score, gcost
@@ -191,8 +230,8 @@ def main():
     best = (np.inf, None, None)
     log = open(out / "log.jsonl", "w")
     t_start = time.time()
-    speaker = "--speaker" in args
-    with cf.ProcessPoolExecutor(os.cpu_count(), initializer=_init, initargs=(target, base, train, level, speaker)) as pool:
+    speaker, clarity = "--speaker" in args, "--clarity" in args
+    with cf.ProcessPoolExecutor(os.cpu_count(), initializer=_init, initargs=(target, base, train, level, speaker, clarity)) as pool:
         s0, g0 = pool.submit(_evaluate, x0).result()
         print(f"default: {s0:.3f}  " + " ".join(f"{k} {v:.2f}" for k, v in g0.items()), flush=True)
         for gen in range(int(opt["--gens"])):

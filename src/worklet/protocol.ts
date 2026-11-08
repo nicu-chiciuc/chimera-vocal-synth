@@ -4,7 +4,7 @@ import type { VoiceSource, VoiceTelemetry } from "../wasm/types.ts";
 import type { Segment, PlannedSegment } from "../wasm/types.ts";
 import type { Gesture } from "../wasm/types.ts";
 import type { CreatureTelemetry } from "../wasm/types.ts";
-import type { BeatStep, BodyMix } from "../wasm/types.ts";
+import type { BeatStep, BodyMix, Habits } from "../wasm/types.ts";
 
 export interface PhraseMsg {
   segments: Segment[];
@@ -16,6 +16,8 @@ export type BodyName = "male" | "female" | "child";
 
 export type ToWorklet =
   | { type: "body"; body: BodyMix }
+  /** the speaker's articulatory habits, for everything scheduled from now on */
+  | { type: "habits"; habits: Habits }
   | { type: "artic"; values: Partial<HumanArtic>; tipFree?: boolean }
   | { type: "source"; values: Partial<VoiceSource> }
   | { type: "gate"; level: number }
