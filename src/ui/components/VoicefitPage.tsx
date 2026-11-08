@@ -4,7 +4,8 @@
  *
  * Blind by default: candidates get letters in an order shuffled once per browser, and their names,
  * settings and measures stay hidden until Reveal. Every play is level-matched to the singer's
- * line. Ratings (sounds like the singer, words clear, a note) are saved to the fit's folder
+ * line, and by default the band (the separated instrumental) plays under it at the record's own
+ * balance, to hear how each voice sits in the song. Ratings (sounds like the singer, words clear, a note) are saved to the fit's folder
  * (`ratings.json`, through the dev server: see vite.config.ts), where the next fit can read them.
  *
  * Keys: up/down pick a line, 0 or C plays the singer, 1-9 the candidates, space the line through
@@ -44,6 +45,8 @@ interface Candidate {
 interface Catalog {
   title: string;
   target: string;
+  /** the separated instrumental on the same timeline (prepare.py backing) */
+  accompaniment?: string;
   lines: Line[];
   candidates: Candidate[];
 }
@@ -59,6 +62,7 @@ type Ratings = Record<string, Rating>;
 
 const BASE = `${import.meta.env.BASE_URL}voicefit/`;
 const TARGET = "target";
+const BACKING = "backing";
 const LETTERS = "ABCDEFGHIJKLMNOPQRSTUVWXYZ";
 
 async function getJson<T>(name: string, fallback?: T): Promise<T> {
@@ -106,6 +110,9 @@ export function VoicefitPage() {
   const [error, setError] = useState<string | null>(null);
   const [ratings, setRatings] = useState<Ratings>({});
   const [blind, setBlind] = useState(true);
+  // the band under every rendition, at the song's own balance: how a voice sits in the record
+  const [music, setMusic] = useState(true);
+  const musicSrc = useRef<AudioBufferSourceNode | null>(null);
   const [line, setLine] = useState(0);
   const [playing, setPlaying] = useState<string | null>(null);
   const [loaded, setLoaded] = useState(0);
@@ -129,6 +136,7 @@ export function VoicefitPage() {
   useEffect(() => {
     if (!cat) return;
     const files: [string, string][] = [[TARGET, cat.target], ...cat.candidates.map((c) => [c.id, c.wav] as [string, string])];
+    if (cat.accompaniment) files.push([BACKING, cat.accompaniment]);
     let alive = true;
     void Promise.all(
       files.map(async ([id, file]) => {
@@ -158,6 +166,8 @@ export function VoicefitPage() {
       current.current.stop();
       current.current = null;
     }
+    musicSrc.current?.stop();
+    musicSrc.current = null;
     setPlaying(null);
   }, []);
 
@@ -175,15 +185,27 @@ export function VoicefitPage() {
       src.connect(gain).connect(ac.destination);
       src.onended = () => {
         current.current = null;
+        musicSrc.current?.stop();
+        musicSrc.current = null;
         setPlaying(null);
         if (then) queue.current = window.setTimeout(then, 350);
       };
       current.current = src;
       setPlaying(id);
       setLine(li);
-      src.start(0, l.t0, l.t1 - l.t0);
+      // voice and band start on the same sample of the same timeline
+      const at = ac.currentTime + 0.03;
+      const band = buffers.current.get(BACKING);
+      if (music && band) {
+        const m = ac.createBufferSource();
+        m.buffer = band;
+        m.connect(ac.destination);
+        m.start(at, l.t0, l.t1 - l.t0);
+        musicSrc.current = m;
+      }
+      src.start(at, l.t0, l.t1 - l.t0);
     },
-    [cat, audio, stop],
+    [cat, audio, stop, music],
   );
 
   const playAll = useCallback(
@@ -236,7 +258,7 @@ export function VoicefitPage() {
       </div>
     );
   if (!cat) return <div className="vf" />;
-  const total = cat.candidates.length + 1;
+  const total = cat.candidates.length + 1 + (cat.accompaniment ? 1 : 0);
 
   return (
     <div className="vf">
@@ -245,6 +267,11 @@ export function VoicefitPage() {
         sub={`${cat.title} · ${loaded < total ? `loading ${loaded}/${total}` : "↑↓ line · 0 singer · 1-9 voice · space all · esc stop"}`}
         tools={
           <>
+            {cat.accompaniment && (
+              <Chip on={music} onClick={() => setMusic((m) => !m)} title="Play the band under every voice, at the record's balance">
+                {music ? "✓ Backing music" : "Backing music off"}
+              </Chip>
+            )}
             <Chip on={!blind} onClick={() => setBlind((b) => !b)}>
               {blind ? "Reveal" : "Revealed"}
             </Chip>

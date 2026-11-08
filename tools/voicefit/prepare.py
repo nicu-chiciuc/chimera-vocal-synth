@@ -3,6 +3,9 @@
   prepare.py cut <vocal.wav> <words.json> <t0> <t1> <dir>
       dir/target.wav (48 kHz mono, the excerpt), dir/lines.json (Whisper's words grouped into
       lines), and an MFA corpus in dir/mfa/corpus, one line per utterance.
+  prepare.py backing <no_vocals.wav> <dir>
+      dir/accompaniment.wav: the separated instrumental (Demucs' no_vocals), cut to the same
+      excerpt as target.wav, so the comparison page can play every rendition over the band.
   prepare.py collect <dir>
       reads MFA's JSON in dir/mfa/aligned and writes dir/track.json: the phrases (one per line,
       phones with their times on the excerpt's clock) and the singer's pitch curve (Praat, 5 ms).
@@ -50,6 +53,14 @@ def cut(vocal, words_path, t0, t1, out):
         spans.append({"name": name, "t0": round(a, 3), "t1": round(b, 3), "text": text})
     json.dump({"source": str(vocal), "t0": t0, "t1": t1, "lines": spans}, open(out / "lines.json", "w"), indent=1)
     print(f"{len(lines)} lines, {t1 - t0:.1f} s")
+
+
+def backing(no_vocals, out):
+    out = pathlib.Path(out)
+    meta = json.load(open(out / "lines.json"))
+    y, _ = librosa.load(no_vocals, sr=FS, mono=True, offset=meta["t0"], duration=meta["t1"] - meta["t0"])
+    sf.write(out / "accompaniment.wav", y, FS, subtype="FLOAT")
+    print(f"{out / 'accompaniment.wav'}: {len(y) / FS:.1f} s")
 
 
 def collect(out):
@@ -109,6 +120,8 @@ if __name__ == "__main__":
     cmd = sys.argv[1]
     if cmd == "cut":
         cut(sys.argv[2], sys.argv[3], float(sys.argv[4]), float(sys.argv[5]), sys.argv[6])
+    elif cmd == "backing":
+        backing(sys.argv[2], sys.argv[3])
     elif cmd == "collect":
         collect(sys.argv[2])
     else:

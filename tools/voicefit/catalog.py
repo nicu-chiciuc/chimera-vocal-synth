@@ -99,6 +99,8 @@ def main():
             "judges": cache["judges"],
         })
     cat = {"title": d.parent.name + " / " + d.name, "target": "target.wav", "lines": lines, "candidates": out}
+    if (d / "accompaniment.wav").exists():
+        cat["accompaniment"] = "accompaniment.wav"
     json.dump(cat, open(d / "candidates.json", "w"), indent=1)
     print(f"{d / 'candidates.json'}: {len(out)} candidates, {len(lines)} lines")
 
