@@ -219,7 +219,12 @@ export function VoicefitPage() {
   const order = useMemo(() => (cat ? (blind ? blindOrder(cat.candidates.map((c) => c.id)) : cat.candidates.map((c) => c.id)) : []), [cat, blind]);
   const byId = useMemo(() => new Map(cat?.candidates.map((c) => [c.id, c]) ?? []), [cat]);
   const spans = useMemo<Span[]>(() => cat?.lines.map((l) => ({ key: `line${l.i}`, t0: l.t0, t1: l.t1 })) ?? [], [cat]);
-  const whole = useMemo<Span | null>(() => (cat && cat.lines.length ? { key: "whole", t0: Math.max(0, cat.lines[0].t0 - 1), t1: cat.lines[cat.lines.length - 1].t1 + 4 } : null), [cat]);
+  // the whole recording, the band's intro and outro included (its length once it is decoded)
+  const whole = useMemo<Span | null>(() => {
+    if (!cat || !cat.lines.length) return null;
+    const end = Math.max(buffers.current.get(BACKING)?.duration ?? 0, buffers.current.get(TARGET)?.duration ?? 0);
+    return { key: "whole", t0: 0, t1: end || cat.lines[cat.lines.length - 1].t1 + 4 };
+  }, [cat, loaded]); // `loaded` counts the decoded files: recompute as they arrive
   const name = (id: string) => (id === TARGET ? "Singer" : blind ? `Voice ${LETTERS[order.indexOf(id)]}` : (byId.get(id)?.label ?? id));
   const short = (id: string) => (id === TARGET ? "Singer" : blind ? LETTERS[order.indexOf(id)] : String(order.indexOf(id) + 1));
   const performer = shown && teles.has(shown) ? shown : (order.find((id) => teles.has(id)) ?? null);
