@@ -631,6 +631,12 @@ interface Echo {
 }
 const ECHO_AGES = [0.09, 0.06, 0.03];
 
+const ONE = new THREE.Vector3(1, 1, 1);
+/** where a stage puts the face, whatever the body (scene cm): the camera's fixed orbit centre */
+const STAGE_FACE = new THREE.Vector3(2.8, 12.0, 0);
+/** a body's face point (nose height, a little inside the face), in its own cm */
+const stageFace = (rest: Rest, k: number) => new THREE.Vector3(rest.center.x + 2.5 * k, rest.head.y1 - 11 * k, 0);
+
 export class Anatomy3D {
   readonly scene = new THREE.Scene();
   readonly camera = new THREE.PerspectiveCamera(24, 1, 5, 2000);
@@ -652,6 +658,8 @@ export class Anatomy3D {
   pose = { strum: 0, fret: 0.3 };
   private props: { model: VoiceModel; p: Props } | null = null;
   private readonly unturn = new THREE.Matrix4();
+  /** the head's nod this frame (about its pivot, in the body's own cm) */
+  private readonly headM = new THREE.Matrix4();
   private clock = 0;
   private readonly gaze = new Gaze();
   /** brows, lids, cheeks and the head's nods, from the voice (the view updates it) */
@@ -720,8 +728,7 @@ export class Anatomy3D {
       // orbit and zoom about the face (the nose's height, a little inside the face), and stand
       // back far enough for hat to guitar: the view offset in resize() puts the face in the upper
       // part of the frame, so the guitar shows below it
-      const k = model.tract.scale;
-      target.set(r.center.x + 2.5 * k, r.head.y1 - 11 * k, 0);
+      target.copy(STAGE_FACE);
       d = 1.1 * Math.max(44 / half, 36 / (half * Math.max(0.3, this.camera.aspect)));
     }
     // facing left: the same three-quarter view from the head's other side
@@ -784,7 +791,7 @@ export class Anatomy3D {
     const C = rest.condyle;
     const B = this.beams;
     // dim with depth: full brightness up to just in front of the head's middle
-    const dist = this.camera.position.distanceTo(rest.center);
+    const dist = this.camera.position.distanceTo(this.stage ? STAGE_FACE : rest.center);
     const fog = this.scene.fog as THREE.Fog;
     fog.near = dist - 3 * k;
     fog.far = dist + (this.stage ? 70 : 30) * k;
@@ -919,7 +926,8 @@ export class Anatomy3D {
     if (!this.props || this.props.model !== model) this.props = { model, p: buildProps(rest.head, k) };
     const B = this.beams;
     for (const g of this.props.p.hat) for (const l of g.lines) B.line(l, l.length / 3, g.color, g.width, { alpha: g.alpha });
-    const e = this.unturn.copy(B.group.matrix).invert().elements;
+    // undo only the nod (H), not the stage's scaling: the body stays still and at the head's size
+    const e = this.unturn.copy(this.headM).invert().elements;
     for (const g of [...this.props.p.body, this.props.p.arms(this.pose.strum, this.pose.fret)]) {
       for (const l of g.lines) {
         const P = this.tmp.reset();
@@ -936,8 +944,20 @@ export class Anatomy3D {
     const g = this.beams.group;
     const pivot = this.v3.set(-2.4 * k, rest.head.y0 + 0.42 * (rest.condyle.y - rest.head.y0), 0);
     this.turn.setFromEuler(this.euler.set(this.face.tilt, 0, this.face.nod));
+    // the head's nod about the pivot: H = [turn | pivot − turn·pivot]
+    const p = pivot.clone().sub(pivot.clone().applyQuaternion(this.turn));
+    this.headM.compose(p, this.turn, ONE);
     g.quaternion.copy(this.turn);
-    g.position.copy(pivot).sub(pivot.applyQuaternion(this.turn));
+    if (this.stage) {
+      // every body at one size with its face on one point (STAGE_FACE): the camera never moves
+      // when the voice (and its build) changes, only the proportions do. G = T(F0)·S(1/k)·T(−F)·H
+      const s = 1 / k, F = stageFace(rest, k);
+      g.scale.setScalar(s);
+      g.position.copy(p).sub(F).multiplyScalar(s).add(STAGE_FACE);
+    } else {
+      g.scale.setScalar(1);
+      g.position.copy(p);
+    }
     g.updateMatrixWorld(true);
     this.eye.copy(this.camera.position);
     g.worldToLocal(this.eye);
