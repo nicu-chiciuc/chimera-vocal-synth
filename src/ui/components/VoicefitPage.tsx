@@ -261,7 +261,14 @@ export function VoicefitPage() {
               <span className="vf-split">{l.split === "train" ? "fitted on" : l.split === "heldout" ? "held out" : ""}</span>
               <span className="vf-plays">
                 {[TARGET, ...order].map((id) => (
-                  <Chip key={id} on={playing === id && li === line} toggle={false} title={`Play ${name(id)}`} onClick={(e) => (e.stopPropagation(), play(id, li))}>
+                  <Chip
+                    key={id}
+                    className={id === TARGET ? "vf-singer" : undefined}
+                    on={playing === id && li === line}
+                    toggle={false}
+                    title={`Play ${name(id)}`}
+                    onClick={(e) => (e.stopPropagation(), play(id, li))}
+                  >
                     {id === TARGET ? "Singer" : short(id)}
                   </Chip>
                 ))}
