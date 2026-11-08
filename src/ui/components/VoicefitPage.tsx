@@ -374,7 +374,9 @@ export function VoicefitPage() {
         <section className="vf-stage" aria-label="The performer, in 3D">
           {feed ? (
             <Suspense fallback={null}>
-              <AnatomyView3D key={performer ?? ""} feed={feed} readouts={false} overlay={overlay} />
+              {/* one view for every voice: a new one would replay the opening camera turn; a voice
+                  with another build keeps the camera where it is, centred on the new head */}
+              <AnatomyView3D feed={feed} readouts={false} overlay={overlay} />
             </Suspense>
           ) : (
             <p className="vf-msg">Loading the performer…</p>
