@@ -162,6 +162,12 @@ export function VoicefitPage() {
   const [teles, setTeles] = useState<Map<string, TeleTrack>>(new Map());
   /** the voice whose movements the performer shows */
   const [shown, setShown] = useState<string | null>(null);
+  /** the voice the player plays: the singer, or a candidate */
+  const [sel, setSel] = useState<string>(TARGET);
+  /** where the player stands while paused (s on the timeline) */
+  const [pos, setPos] = useState(0);
+  /** the stretch the player is in: the whole track, or the line last played */
+  const spanRef = useRef<Span | null>(null);
   const [, setTick] = useState(0);
   const ctx = useRef<AudioContext | null>(null);
   const buffers = useRef(new Map<string, AudioBuffer>());
@@ -243,12 +249,16 @@ export function VoicefitPage() {
     setPlaying(null);
   }, []);
 
+  /** play voice `id` over `span`, from `from` (default its start) to its end */
   const play = useCallback(
-    (id: string, span: Span, then?: () => void) => {
+    (id: string, span: Span, then?: () => void, from?: number) => {
       const b = buffers.current.get(id), t = buffers.current.get(TARGET);
       if (!b || !t) return;
       stop();
       if (id !== TARGET) setShown(id);
+      setSel(id);
+      spanRef.current = span;
+      const start = Math.min(span.t1 - 0.05, Math.max(span.t0, from ?? span.t0));
       const ac = audio();
       void ac.resume();
       const src = ac.createBufferSource();
@@ -262,6 +272,7 @@ export function VoicefitPage() {
         musicSrc.current = null;
         clockRef.current = null;
         setPlaying(null);
+        setPos(span.t1);
         if (then) queue.current = window.setTimeout(then, 350);
       };
       current.current = src;
@@ -273,11 +284,11 @@ export function VoicefitPage() {
         const m = ac.createBufferSource();
         m.buffer = band;
         m.connect(ac.destination);
-        m.start(at, span.t0, span.t1 - span.t0);
+        m.start(at, start, span.t1 - start);
         musicSrc.current = m;
       }
-      src.start(at, span.t0, span.t1 - span.t0);
-      clockRef.current = { at, t0: span.t0, t1: span.t1 };
+      src.start(at, start, span.t1 - start);
+      clockRef.current = { at, t0: start, t1: span.t1 };
       epoch.current++;
     },
     [audio, stop, music],
@@ -308,28 +319,71 @@ export function VoicefitPage() {
     return Math.min(c.t1, c.t0 + Math.max(0, ac.currentTime - c.at));
   }, []);
 
-  // the time readout while something plays
+  // the player: where it stands, and what it plays next
+  const cur = (): number => now() ?? pos;
+  /** this voice from here on: while something plays, the same stretch goes on from the same moment */
+  const switchTo = (id: string) => {
+    const sp = spanRef.current;
+    if (clockRef.current && sp) play(id, sp, undefined, now() ?? sp.t0);
+    else setSel(id);
+  };
+  /** a voice over a line: from where it is if that line is playing, else from the line's start */
+  const lineVoice = (id: string, li: number) => {
+    setLine(li);
+    const sp = spans[li];
+    if (sp && clockRef.current && spanRef.current?.key === sp.key) play(id, sp, undefined, now() ?? sp.t0);
+    else playLine(id, li);
+  };
+  const pause = () => {
+    const t = now();
+    stop();
+    if (t !== null) setPos(t);
+  };
+  const toggle = () => {
+    if (clockRef.current) return pause();
+    const sp = spanRef.current ?? whole;
+    if (!sp) return;
+    play(sel, sp, undefined, pos < sp.t0 || pos >= sp.t1 - 0.1 ? sp.t0 : pos);
+  };
+  /** move the player to t on the whole track (playing on if it was) */
+  const seek = (t: number) => {
+    if (!whole) return;
+    const to = Math.max(0, Math.min(whole.t1 - 0.05, t));
+    if (clockRef.current) play(sel, whole, undefined, to);
+    else {
+      spanRef.current = whole;
+      setPos(to);
+    }
+  };
+  const controls = useRef({ toggle, seek, cur, switchTo });
+  controls.current = { toggle, seek, cur, switchTo };
+
+  // the time readout and the slider while something plays
   useEffect(() => {
-    const id = setInterval(() => clockRef.current && setTick((n) => n + 1), 250);
+    const id = setInterval(() => clockRef.current && setTick((n) => n + 1), 100);
     return () => clearInterval(id);
   }, []);
 
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
-      if (!cat) return;
+      if (!cat || (e.target instanceof HTMLInputElement && e.target.type !== "range")) return;
+      const c = controls.current;
       if (e.key === "ArrowDown" || e.key === "ArrowUp") {
         e.preventDefault();
         setLine((l) => Math.min(cat.lines.length - 1, Math.max(0, l + (e.key === "ArrowDown" ? 1 : -1))));
-      } else if (e.key === "0" || e.key.toLowerCase() === "c") playLine(TARGET, line);
-      else if (/^[1-9]$/.test(e.key) && order[Number(e.key) - 1]) playLine(order[Number(e.key) - 1], line);
+      } else if (e.key === "ArrowLeft" || e.key === "ArrowRight") {
+        e.preventDefault();
+        c.seek(c.cur() + (e.key === "ArrowRight" ? 5 : -5));
+      } else if (e.key === "0" || e.key.toLowerCase() === "c") c.switchTo(TARGET);
+      else if (/^[1-9]$/.test(e.key) && order[Number(e.key) - 1]) c.switchTo(order[Number(e.key) - 1]);
       else if (e.key === " ") {
         e.preventDefault();
-        playAll(line);
+        c.toggle();
       } else if (e.key === "Escape") stop();
     };
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
-  }, [cat, line, order, playLine, playAll, stop]);
+  }, [cat, order, stop]);
 
   useEffect(() => () => stop(), [stop]);
 
@@ -379,6 +433,10 @@ export function VoicefitPage() {
   if (!cat) return <div className="vf" />;
   const total = cat.candidates.length + 1 + (cat.accompaniment ? 1 : 0);
   const t = now();
+  const at = t ?? pos;
+  const end = whole?.t1 ?? 0;
+  // the line being sung at the playhead (or the last one before it)
+  const sungLine = cat.lines[Math.max(0, lastAtOrBefore(cat.lines.map((l) => l.t0), at))];
 
   const buttons = (span: Span, onPlay: (id: string) => void) =>
     [TARGET, ...order].map((id) => (
@@ -421,9 +479,44 @@ export function VoicefitPage() {
         )}
       </Screen>
 
+      <section className="vf-player" aria-label="Player">
+        <div className="vf-plays">
+          {[TARGET, ...order].map((id) => (
+            <Chip key={id} className={id === TARGET ? "vf-singer" : undefined} on={sel === id} onClick={() => switchTo(id)} title={`Switch to ${name(id)} (keeps the position)`}>
+              {id === TARGET ? "Singer" : name(id)}
+            </Chip>
+          ))}
+        </div>
+        <div className="vf-bar">
+          <Chip toggle={false} className="vf-playbtn" onClick={toggle} disabled={!whole || loaded < total}>
+            {playing ? "❚❚ Pause" : "▶ Play"}
+          </Chip>
+          <Chip toggle={false} onClick={() => seek(at - 5)} title="Back 5 s (←)">
+            −5 s
+          </Chip>
+          <Chip toggle={false} onClick={() => seek(at + 5)} title="Forward 5 s (→)">
+            +5 s
+          </Chip>
+          <span className="vf-time">
+            {clock(at)} / {clock(end)}
+          </span>
+          <input
+            type="range"
+            aria-label="Position in the song"
+            min={0}
+            max={end || 1}
+            step={0.1}
+            value={Math.min(at, end || 1)}
+            onChange={(e) => seek(Number(e.target.value))}
+            style={{ "--pos": `${end ? (100 * at) / end : 0}%` } as React.CSSProperties}
+          />
+        </div>
+        <p className="vf-now">{at >= (sungLine?.t0 ?? Infinity) && at <= (sungLine?.t1 ?? 0) + 2 ? sungLine.text : " "}</p>
+      </section>
+
       <Screen
         title="Voice fit"
-        sub={`${cat.title} · ${loaded < total ? `loading ${loaded}/${total}` : "↑↓ line · 0 singer · 1-9 voice · space all · esc stop"}`}
+        sub={`${cat.title} · ${loaded < total ? `loading ${loaded}/${total}` : "space play/pause · ←→ 5 s · 0 singer · 1-9 voice · ↑↓ line · esc stop"}`}
         tools={
           <>
             {cat.accompaniment && (
@@ -443,19 +536,12 @@ export function VoicefitPage() {
           </>
         }
       >
-        {whole && (
-          <section className="vf-verse">
-            <span className="vf-text">{cat.lines.length > 10 ? "Whole song" : "Whole excerpt"}</span>
-            <span className="vf-split">{clock(whole.t1 - whole.t0)}</span>
-            <span className="vf-plays">{buttons(whole, (id) => play(id, whole))}</span>
-          </section>
-        )}
         <ol className="vf-lines">
           {cat.lines.map((l, li) => (
             <li key={l.i} className={li === line ? "vf-line on" : "vf-line"} onClick={() => setLine(li)}>
               <span className="vf-text">{l.text}</span>
               <span className="vf-split">{l.split === "train" ? "fitted on" : l.split === "heldout" ? "held out" : ""}</span>
-              <span className="vf-plays">{buttons(spans[li], (id) => playLine(id, li))}</span>
+              <span className="vf-plays">{buttons(spans[li], (id) => lineVoice(id, li))}</span>
             </li>
           ))}
         </ol>

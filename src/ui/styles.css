@@ -2881,6 +2881,82 @@ input[type="range"]::-moz-range-thumb {
   min-height: min(64vh, 640px);
 }
 
+/* the player: voices to switch between, the transport, the line being sung */
+.vf-player {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  padding: 14px 16px;
+  border: 1px solid var(--vf-edge);
+  background: #05090c;
+}
+
+.vf-bar {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+.vf .chip.vf-playbtn {
+  min-width: 110px;
+  border-color: var(--blue);
+}
+
+.vf-time {
+  font-size: 16px;
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+  color: var(--vf-text);
+  min-width: 96px;
+  text-align: center;
+}
+
+.vf-bar input[type="range"] {
+  flex: 1 1 240px;
+  height: 32px;
+}
+
+.vf-bar input[type="range"]::-webkit-slider-runnable-track {
+  height: 8px;
+  border-radius: 4px;
+  background: linear-gradient(to right, var(--amber) 0, var(--amber) var(--pos, 0%), #24465e var(--pos, 0%));
+}
+
+.vf-bar input[type="range"]::-moz-range-track {
+  height: 8px;
+  border-radius: 4px;
+  background: #24465e;
+}
+
+.vf-bar input[type="range"]::-moz-range-progress {
+  height: 8px;
+  border-radius: 4px;
+  background: var(--amber);
+}
+
+.vf-bar input[type="range"]::-webkit-slider-thumb {
+  width: 22px;
+  height: 22px;
+  margin-top: -7px;
+  background: #fff;
+  box-shadow: 0 0 8px rgba(255, 179, 64, 0.7);
+}
+
+.vf-bar input[type="range"]::-moz-range-thumb {
+  width: 22px;
+  height: 22px;
+  background: #fff;
+}
+
+.vf-now {
+  margin: 0;
+  font-size: 20px;
+  font-weight: 600;
+  color: var(--green);
+  min-height: 1.3em;
+}
+
 .vf-verse {
   display: grid;
   grid-template-columns: minmax(0, 1fr) auto;
