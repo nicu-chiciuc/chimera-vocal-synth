@@ -5,8 +5,8 @@ import path from "node:path";
 
 /**
  * The comparison page's data (`?voicefit`, dev server only): `/voicefit/<file>` serves a voice fit's
- * folder (tools/voicefit: the recording, the renders, candidates.json), and a POST to
- * `/voicefit/ratings.json` saves the listener's ratings there. The folder is `VOICEFIT_DIR`, or
+ * folder, read-only (tools/voicefit: the recording, the band, the renders, candidates.json). The
+ * folder is `VOICEFIT_DIR`, or
  * `out/voicefit` (gitignored; a link to the fit's folder). Nothing of it is built or published:
  * the recording is usually someone else's.
  */
@@ -32,25 +32,6 @@ function voicefit(): Plugin {
           return res.end(`no voice fit folder: set VOICEFIT_DIR or link out/voicefit`);
         }
         const file = path.join(dir, rel);
-        if (req.method === "POST" && rel === "ratings.json") {
-          let body = "";
-          req.on("data", (c) => {
-            body += c;
-            if (body.length > 1 << 20) req.destroy();
-          });
-          req.on("end", () => {
-            try {
-              JSON.parse(body);
-              fs.writeFileSync(file, body);
-              res.statusCode = 204;
-              res.end();
-            } catch (e) {
-              res.statusCode = 400;
-              res.end(String(e));
-            }
-          });
-          return;
-        }
         if (req.method !== "GET" && req.method !== "HEAD") {
           res.statusCode = 405;
           return res.end();

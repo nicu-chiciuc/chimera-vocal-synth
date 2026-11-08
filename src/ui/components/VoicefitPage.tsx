@@ -1,12 +1,11 @@
 /**
  * The voice-fit comparison page (`?voicefit`, dev server only): every candidate voice from
- * tools/voicefit, line by line against the recording it was fitted to, for a listener to judge.
+ * tools/voicefit against the recording it was fitted to, the whole verse or line by line.
  *
- * Blind by default: candidates get letters in an order shuffled once per browser, and their names,
- * settings and measures stay hidden until Reveal. Every play is level-matched to the singer's
- * line, and by default the band (the separated instrumental) plays under it at the record's own
- * balance, to hear how each voice sits in the song. Ratings (sounds like the singer, words clear, a note) are saved to the fit's folder
- * (`ratings.json`, through the dev server: see vite.config.ts), where the next fit can read them.
+ * Blind by default: candidates get letters in an order shuffled once per browser, and their names
+ * and measures stay hidden until Reveal. Every play is level-matched to the singer over the same
+ * stretch, and by default the band (the separated instrumental) plays under it at the record's
+ * own balance, to hear how each voice sits in the song.
  *
  * Keys: up/down pick a line, 0 or C plays the singer, 1-9 the candidates, space the line through
  * all of them, Esc stops.
@@ -51,28 +50,17 @@ interface Catalog {
   candidates: Candidate[];
 }
 
-interface Rating {
-  like?: number;
-  clear?: number;
-  note?: string;
-  at?: string;
+/** a stretch of the timeline: one line, or the whole verse */
+interface Span {
+  key: string;
+  t0: number;
+  t1: number;
 }
-
-type Ratings = Record<string, Rating>;
 
 const BASE = `${import.meta.env.BASE_URL}voicefit/`;
 const TARGET = "target";
 const BACKING = "backing";
 const LETTERS = "ABCDEFGHIJKLMNOPQRSTUVWXYZ";
-
-async function getJson<T>(name: string, fallback?: T): Promise<T> {
-  const r = await fetch(BASE + name, { cache: "no-store" });
-  if (!r.ok) {
-    if (fallback !== undefined && r.status === 404) return fallback;
-    throw new Error(`${name}: ${r.status} ${await r.text()}`);
-  }
-  return r.json() as Promise<T>;
-}
 
 /** A shuffle that stays the same in this browser (so letters keep their meaning across reloads). */
 function blindOrder(ids: string[]): string[] {
@@ -108,31 +96,31 @@ const pct = (x: number) => `${Math.round(x * 100)} %`;
 export function VoicefitPage() {
   const [cat, setCat] = useState<Catalog | null>(null);
   const [error, setError] = useState<string | null>(null);
-  const [ratings, setRatings] = useState<Ratings>({});
   const [blind, setBlind] = useState(true);
   // the band under every rendition, at the song's own balance: how a voice sits in the record
   const [music, setMusic] = useState(true);
-  const musicSrc = useRef<AudioBufferSourceNode | null>(null);
   const [line, setLine] = useState(0);
-  const [playing, setPlaying] = useState<string | null>(null);
+  /** what is playing: voice id and span key */
+  const [playing, setPlaying] = useState<{ id: string; span: string } | null>(null);
   const [loaded, setLoaded] = useState(0);
   const ctx = useRef<AudioContext | null>(null);
   const buffers = useRef(new Map<string, AudioBuffer>());
   const current = useRef<AudioBufferSourceNode | null>(null);
+  const musicSrc = useRef<AudioBufferSourceNode | null>(null);
   const queue = useRef<number | null>(null);
-  const saveTimer = useRef<number | null>(null);
 
   useEffect(() => {
-    (async () => {
-      const c = await getJson<Catalog>("candidates.json");
-      setCat(c);
-      setRatings(await getJson<Ratings>("ratings.json", {}));
-    })().catch((e) => setError(e instanceof Error ? e.message : String(e)));
+    fetch(BASE + "candidates.json", { cache: "no-store" })
+      .then(async (r) => {
+        if (!r.ok) throw new Error(`candidates.json: ${r.status} ${await r.text()}`);
+        setCat((await r.json()) as Catalog);
+      })
+      .catch((e) => setError(e instanceof Error ? e.message : String(e)));
   }, []);
 
   const audio = useCallback(() => (ctx.current ??= new AudioContext()), []);
 
-  // decode the recording and every render once
+  // decode the recording, the band and every render once
   useEffect(() => {
     if (!cat) return;
     const files: [string, string][] = [[TARGET, cat.target], ...cat.candidates.map((c) => [c.id, c.wav] as [string, string])];
@@ -155,6 +143,8 @@ export function VoicefitPage() {
 
   const order = useMemo(() => (cat ? (blind ? blindOrder(cat.candidates.map((c) => c.id)) : cat.candidates.map((c) => c.id)) : []), [cat, blind]);
   const byId = useMemo(() => new Map(cat?.candidates.map((c) => [c.id, c]) ?? []), [cat]);
+  const spans = useMemo<Span[]>(() => cat?.lines.map((l) => ({ key: `line${l.i}`, t0: l.t0, t1: l.t1 })) ?? [], [cat]);
+  const verse = useMemo<Span | null>(() => (cat && cat.lines.length ? { key: "verse", t0: cat.lines[0].t0, t1: cat.lines[cat.lines.length - 1].t1 } : null), [cat]);
   const name = (id: string) => (id === TARGET ? "Singer" : blind ? `Voice ${LETTERS[order.indexOf(id)]}` : (byId.get(id)?.label ?? id));
   const short = (id: string) => (id === TARGET ? "Singer" : blind ? LETTERS[order.indexOf(id)] : String(order.indexOf(id) + 1));
 
@@ -172,16 +162,16 @@ export function VoicefitPage() {
   }, []);
 
   const play = useCallback(
-    (id: string, li: number, then?: () => void) => {
-      const b = buffers.current.get(id), t = buffers.current.get(TARGET), l = cat?.lines[li];
-      if (!b || !t || !l) return;
+    (id: string, span: Span, then?: () => void) => {
+      const b = buffers.current.get(id), t = buffers.current.get(TARGET);
+      if (!b || !t) return;
       stop();
       const ac = audio();
       void ac.resume();
       const src = ac.createBufferSource();
       src.buffer = b;
       const gain = ac.createGain();
-      gain.gain.value = id === TARGET ? 1 : rms(t, l.t0, l.t1) / rms(b, l.t0, l.t1);
+      gain.gain.value = id === TARGET ? 1 : rms(t, span.t0, span.t1) / rms(b, span.t0, span.t1);
       src.connect(gain).connect(ac.destination);
       src.onended = () => {
         current.current = null;
@@ -191,8 +181,7 @@ export function VoicefitPage() {
         if (then) queue.current = window.setTimeout(then, 350);
       };
       current.current = src;
-      setPlaying(id);
-      setLine(li);
+      setPlaying({ id, span: span.key });
       // voice and band start on the same sample of the same timeline
       const at = ac.currentTime + 0.03;
       const band = buffers.current.get(BACKING);
@@ -200,31 +189,40 @@ export function VoicefitPage() {
         const m = ac.createBufferSource();
         m.buffer = band;
         m.connect(ac.destination);
-        m.start(at, l.t0, l.t1 - l.t0);
+        m.start(at, span.t0, span.t1 - span.t0);
         musicSrc.current = m;
       }
-      src.start(at, l.t0, l.t1 - l.t0);
+      src.start(at, span.t0, span.t1 - span.t0);
     },
-    [cat, audio, stop, music],
+    [audio, stop, music],
+  );
+
+  const playLine = useCallback(
+    (id: string, li: number, then?: () => void) => {
+      if (!spans[li]) return;
+      setLine(li);
+      play(id, spans[li], then);
+    },
+    [spans, play],
   );
 
   const playAll = useCallback(
     (li: number) => {
       const ids = [TARGET, ...order];
-      const step = (k: number) => k < ids.length && play(ids[k], li, () => step(k + 1));
+      const step = (k: number) => k < ids.length && playLine(ids[k], li, () => step(k + 1));
       step(0);
     },
-    [order, play],
+    [order, playLine],
   );
 
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
-      if (!cat || (e.target instanceof HTMLElement && e.target.closest("input, textarea"))) return;
+      if (!cat) return;
       if (e.key === "ArrowDown" || e.key === "ArrowUp") {
         e.preventDefault();
         setLine((l) => Math.min(cat.lines.length - 1, Math.max(0, l + (e.key === "ArrowDown" ? 1 : -1))));
-      } else if (e.key === "0" || e.key.toLowerCase() === "c") play(TARGET, line);
-      else if (/^[1-9]$/.test(e.key) && order[Number(e.key) - 1]) play(order[Number(e.key) - 1], line);
+      } else if (e.key === "0" || e.key.toLowerCase() === "c") playLine(TARGET, line);
+      else if (/^[1-9]$/.test(e.key) && order[Number(e.key) - 1]) playLine(order[Number(e.key) - 1], line);
       else if (e.key === " ") {
         e.preventDefault();
         playAll(line);
@@ -232,20 +230,9 @@ export function VoicefitPage() {
     };
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
-  }, [cat, line, order, play, playAll, stop]);
+  }, [cat, line, order, playLine, playAll, stop]);
 
   useEffect(() => () => stop(), [stop]);
-
-  const rate = (id: string, r: Rating) => {
-    setRatings((prev) => {
-      const next = { ...prev, [id]: { ...prev[id], ...r, at: new Date().toISOString() } };
-      if (saveTimer.current !== null) clearTimeout(saveTimer.current);
-      saveTimer.current = window.setTimeout(() => {
-        void fetch(BASE + "ratings.json", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(next, null, 1) }).catch((e) => setError(String(e)));
-      }, 400);
-      return next;
-    });
-  };
 
   if (error)
     return (
@@ -259,6 +246,20 @@ export function VoicefitPage() {
     );
   if (!cat) return <div className="vf" />;
   const total = cat.candidates.length + 1 + (cat.accompaniment ? 1 : 0);
+
+  const buttons = (span: Span, onPlay: (id: string) => void) =>
+    [TARGET, ...order].map((id) => (
+      <Chip
+        key={id}
+        className={id === TARGET ? "vf-singer" : undefined}
+        on={playing?.id === id && playing.span === span.key}
+        toggle={false}
+        title={`Play ${name(id)}`}
+        onClick={(e) => (e.stopPropagation(), onPlay(id))}
+      >
+        {short(id)}
+      </Chip>
+    ));
 
   return (
     <div className="vf">
@@ -278,96 +279,57 @@ export function VoicefitPage() {
             <Chip toggle={false} onClick={() => playAll(line)}>
               Play line through all
             </Chip>
+            <Chip toggle={false} onClick={stop}>
+              Stop
+            </Chip>
           </>
         }
       >
+        {verse && (
+          <section className="vf-verse">
+            <span className="vf-text">Whole verse</span>
+            <span className="vf-split">{Math.round(verse.t1 - verse.t0)} s</span>
+            <span className="vf-plays">{buttons(verse, (id) => play(id, verse))}</span>
+          </section>
+        )}
         <ol className="vf-lines">
           {cat.lines.map((l, li) => (
             <li key={l.i} className={li === line ? "vf-line on" : "vf-line"} onClick={() => setLine(li)}>
               <span className="vf-text">{l.text}</span>
               <span className="vf-split">{l.split === "train" ? "fitted on" : l.split === "heldout" ? "held out" : ""}</span>
-              <span className="vf-plays">
-                {[TARGET, ...order].map((id) => (
-                  <Chip
-                    key={id}
-                    className={id === TARGET ? "vf-singer" : undefined}
-                    on={playing === id && li === line}
-                    toggle={false}
-                    title={`Play ${name(id)}`}
-                    onClick={(e) => (e.stopPropagation(), play(id, li))}
-                  >
-                    {id === TARGET ? "Singer" : short(id)}
-                  </Chip>
-                ))}
-              </span>
+              <span className="vf-plays">{buttons(spans[li], (id) => playLine(id, li))}</span>
             </li>
           ))}
         </ol>
       </Screen>
 
-      <Screen title="Your ratings" sub="saved to the fit's folder as you go">
-        <div className="vf-cands">
-          {order.map((id) => {
-            const c = byId.get(id)!;
-            const r = ratings[id] ?? {};
-            const v = voiceById(c.voice ?? null);
-            return (
-              <section key={id} className="vf-cand">
-                <h3 className="vf-name">
-                  {name(id)}
-                  {!blind && v && <span className="vf-voice">in the app: Voice → {v.name}</span>}
-                </h3>
-                {!blind && c.about && <p className="vf-about">{c.about}</p>}
-                <div className="vf-rate">
-                  <span>Sounds like him</span>
-                  {[1, 2, 3, 4, 5].map((n) => (
-                    <Chip key={n} on={r.like === n} onClick={() => rate(id, { like: n })}>
-                      {n}
-                    </Chip>
-                  ))}
-                </div>
-                <div className="vf-rate">
-                  <span>Words clear</span>
-                  {[1, 2, 3, 4, 5].map((n) => (
-                    <Chip key={n} on={r.clear === n} onClick={() => rate(id, { clear: n })}>
-                      {n}
-                    </Chip>
-                  ))}
-                </div>
-                <input className="vf-note" placeholder="Note (what's off?)" value={r.note ?? ""} onChange={(e) => rate(id, { note: e.target.value })} />
-              </section>
-            );
-          })}
-        </div>
-      </Screen>
-
       {!blind && (
-        <Screen title="Measures" sub="lower score is closer; similarity and word error never steered the fit (except round 4's training lines)">
+        <Screen title="Voices" sub="lower score is closer; similarity and word error never steered a fit, except on the fitted lines in rounds 4 and 5">
           <div className="vf-table-wrap">
             <table className="vf-table">
               <thead>
                 <tr>
+                  <th>#</th>
                   <th>Voice</th>
+                  <th>In the app</th>
                   <th>Score fitted</th>
                   <th>Score held out</th>
                   <th>Like him (held out)</th>
                   <th>Word error (held out)</th>
-                  <th>Your like</th>
-                  <th>Your clear</th>
                 </tr>
               </thead>
               <tbody>
-                {order.map((id) => {
+                {order.map((id, i) => {
                   const c = byId.get(id)!;
                   return (
-                    <tr key={id}>
+                    <tr key={id} title={c.about}>
+                      <td>{i + 1}</td>
                       <td>{c.label}</td>
+                      <td>{voiceById(c.voice ?? null)?.name ?? ""}</td>
                       <td>{c.scores.train?.score.toFixed(2)}</td>
                       <td>{c.scores.heldout?.score.toFixed(2)}</td>
                       <td>{c.judges.heldout?.similarity.toFixed(3)}</td>
                       <td>{c.judges.heldout ? pct(c.judges.heldout.wer) : ""}</td>
-                      <td>{ratings[id]?.like ?? ""}</td>
-                      <td>{ratings[id]?.clear ?? ""}</td>
                     </tr>
                   );
                 })}

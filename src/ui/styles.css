@@ -2859,8 +2859,8 @@ input[type="range"]::-moz-range-thumb {
   }
 }
 
-/* ---------- the voice-fit comparison page (?voicefit): the singer's lines, each candidate's
-   rendition, the listener's ratings */
+/* ---------- the voice-fit comparison page (?voicefit): the whole verse and each line, as the
+   singer sang it and as each candidate does */
 /* A working page, read for minutes at a time: a solid sans at reading sizes and bright, framed
    controls, not the wall's thin single-stroke display face. */
 .vf {
@@ -2868,7 +2868,7 @@ input[type="range"]::-moz-range-thumb {
   --vf-dim: #a9c7d8;
   --vf-edge: #4f7d99;
   display: grid;
-  grid-template-columns: minmax(0, 3fr) minmax(0, 2fr);
+  grid-template-columns: minmax(0, 1fr);
   gap: 16px;
   padding: 16px;
   min-height: 100vh;
@@ -2877,8 +2877,20 @@ input[type="range"]::-moz-range-thumb {
   color: var(--vf-text);
 }
 
-.vf > .screen:last-child:nth-child(3) {
-  grid-column: 1 / -1;
+.vf-verse {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 8px 12px;
+  align-items: center;
+  margin: 8px 10px 4px;
+  padding: 12px;
+  border: 2px solid var(--amber);
+  border-radius: 8px;
+  background: #140f05;
+}
+
+.vf-verse .vf-text {
+  font-weight: 700;
 }
 
 .vf .screen {
@@ -3009,79 +3021,6 @@ input[type="range"]::-moz-range-thumb {
   gap: 8px;
 }
 
-.vf-cands {
-  display: flex;
-  flex-direction: column;
-  gap: 18px;
-  padding: 12px 16px 16px;
-}
-
-.vf-cand {
-  display: flex;
-  flex-direction: column;
-  gap: 10px;
-  padding-bottom: 16px;
-  border-bottom: 1px solid var(--vf-edge);
-}
-
-.vf-name {
-  margin: 0;
-  display: flex;
-  flex-wrap: wrap;
-  align-items: baseline;
-  gap: 4px 12px;
-  font-size: 18px;
-  font-weight: 700;
-  color: var(--vf-text);
-}
-
-.vf-voice {
-  font-size: 14px;
-  font-weight: 600;
-  color: var(--amber);
-}
-
-.vf-about {
-  margin: 0;
-  font-size: 15px;
-  line-height: 1.45;
-  color: var(--vf-dim);
-}
-
-.vf-rate {
-  display: flex;
-  flex-wrap: wrap;
-  align-items: center;
-  gap: 6px;
-}
-
-.vf-rate > span {
-  flex: 1 0 100%;
-  font-size: 15px;
-  font-weight: 600;
-  color: var(--vf-dim);
-}
-
-.vf-note {
-  background: #0d1b26;
-  border: 2px solid var(--vf-edge);
-  border-radius: 6px;
-  color: var(--vf-text);
-  padding: 10px 12px;
-  font: inherit;
-  font-size: 15px;
-  min-width: 0;
-}
-
-.vf-note::placeholder {
-  color: #7f9fb3;
-}
-
-.vf-note:focus {
-  border-color: var(--blue);
-  outline: none;
-}
-
 .vf-table-wrap {
   overflow-x: auto;
   padding: 8px 16px 16px;
@@ -3106,10 +3045,4 @@ input[type="range"]::-moz-range-thumb {
   font-weight: 700;
   font-size: 13px;
   color: var(--vf-dim);
-}
-
-@media (max-width: 900px) {
-  .vf {
-    grid-template-columns: minmax(0, 1fr);
-  }
 }
