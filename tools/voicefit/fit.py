@@ -2,10 +2,11 @@
 sung with `chimera render track` and scored with compare.py.
 
   fit.py <dir> [--train 0-3] [--hold 4-7] [--gens 40] [--pop 16] [--seed 1]
+         [--from <dir>/fit/best.json] [--out fit]
 
 <dir> holds target.wav and track.json (prepare.py). The fit sees only the training phrases; the
 held-out phrases are scored at the end to show whether the voice carries over. Writes
-<dir>/fit/: log.jsonl (every candidate), best.json (the settings), best-full.wav (the whole
+<dir>/<out>/: log.jsonl (every candidate), best.json (the settings), best-full.wav (the whole
 excerpt in the best voice), default-full.wav, and report.txt.
 """
 import concurrent.futures as cf
@@ -30,8 +31,8 @@ CHIMERA = REPO / "target" / "release" / "chimera"
 # name, low, high, default (the engine's DEFAULT_SOURCE and the male body)
 PARAMS = [
     ("scale", 0.92, 1.15, 1.0),
-    ("pharynx", 0.85, 1.2, 1.0),
-    ("pressure", 4.0, 14.0, 8.0),
+    ("pharynx", 0.85, 1.35, 1.0),
+    ("pressure", 4.0, 18.0, 8.0),
     ("tension", 0.05, 0.95, 0.5),
     ("breathiness", 0.0, 0.9, 0.15),
     ("fry", 0.0, 0.7, 0.0),
@@ -39,6 +40,17 @@ PARAMS = [
     ("brightness", 0.0, 0.9, 0.25),
     ("drift", 0.0, 20.0, 5.0),
     ("dyn", 0.0, 1.5, 0.0),
+    # habitual articulation: offsets added to every planned target (cm, or 0..1 for lipWidth) ...
+    ("off.larynx", -0.8, 0.6, 0.0),
+    ("off.jaw", -0.25, 0.35, 0.0),
+    ("off.lipProt", -0.2, 0.4, 0.0),
+    ("off.root", -0.4, 0.4, 0.0),
+    # ... and the rest position of what the plans leave alone (the engine's NEUTRAL by default)
+    ("rest.epilarynx", 0.0, 0.8, 0.0),
+    ("rest.ventricular", 0.0, 0.6, 0.0),
+    ("rest.velum", -0.15, 0.3, -0.15),
+    # lax articulation: tongue-body targets pulled this far toward neutral
+    ("reduce", 0.0, 0.6, 0.0),
 ]
 
 
@@ -75,6 +87,11 @@ def track_for(base, p, which, level, duration=None):
     t["anatomy"] = {"scale": p["scale"], "pharynx": p["pharynx"]}
     t["source"] = {k: p[k] for k in ("tension", "breathiness", "fry", "roughness", "brightness", "drift", "pressure")}
     t["pressure"] = {"hop": compare.HOP / compare.FS, "values": [round(p["pressure"] * 10 ** (p["dyn"] * v / 20), 3) for v in level]}
+    t["articulation"] = {
+        "offset": {k[4:]: v for k, v in p.items() if k.startswith("off.")},
+        "posture": {k[5:]: v for k, v in p.items() if k.startswith("rest.")},
+        "reduce": p.get("reduce", 0.0),
+    }
     return t
 
 
@@ -116,18 +133,24 @@ def score_file(target, wav, base, which):
 def main():
     args = sys.argv[1:]
     d = pathlib.Path(args[0])
-    opt = {"--train": "0-3", "--hold": "4-7", "--gens": "40", "--pop": "16", "--seed": "1"}
+    opt = {"--train": "0-3", "--hold": "4-7", "--gens": "40", "--pop": "16", "--seed": "1", "--from": "", "--out": "fit"}
     for k in opt:
         if k in args:
             opt[k] = args[args.index(k) + 1]
     train, hold = compare.parse_which(opt["--train"]), compare.parse_which(opt["--hold"])
-    out = d / "fit"
+    out = d / opt["--out"]
     out.mkdir(exist_ok=True)
     base = json.load(open(d / "track.json"))
     target = str(d / "target.wav")
     level = [round(float(v), 2) for v in level_curve(target, base)]
-    x0 = encode({n: dflt for n, _, _, dflt in PARAMS})
-    es = cma.CMAEvolutionStrategy(x0, 0.25, {"bounds": [0, 1], "popsize": int(opt["--pop"]), "seed": int(opt["--seed"]), "verbose": -9})
+    start = {n: dflt for n, _, _, dflt in PARAMS}
+    sigma = 0.25
+    if opt["--from"]:
+        # continue from an earlier fit's settings (new parameters start at their defaults)
+        start.update(json.load(open(opt["--from"]))["params"])
+        sigma = 0.15
+    x0 = encode(start)
+    es = cma.CMAEvolutionStrategy(x0, sigma, {"bounds": [0, 1], "popsize": int(opt["--pop"]), "seed": int(opt["--seed"]), "verbose": -9})
     best = (np.inf, None, None)
     log = open(out / "log.jsonl", "w")
     t_start = time.time()

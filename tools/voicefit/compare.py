@@ -13,7 +13,9 @@ groups:
   tilt       band levels re the 0-8 kHz total over vowels (0-0.5, 0.5-1, 1-2, 2-4, 4-8 kHz)
   formants   F1-F3 per vowel token (Praat Burg), median |log ratio|
   source     per vowel token: H1-H2, CPPS, HNR, jitter, shimmer (medians over tokens)
-  loudness   correlation of the two level contours over speech frames
+  loudness   correlation of the two level contours over speech frames, each floored 25 dB under
+             its median vowel level (a stop's closure is silent in the synth and holds the
+             room's reverb in a recording; that difference is the room, not the voice)
   voicing    share of speech frames whose voiced/unvoiced call agrees
 
 The measures and units are fixed: a fit may not change them to win.
@@ -168,12 +170,22 @@ def nanmed(xs):
     return float(np.median(xs)) if xs else np.nan
 
 
+FLOOR = 25  # dB under the median vowel level: below it a recording holds its room, not the voice
+
+
+def floored(a, n):
+    return np.maximum(a.level[:n], np.median(a.level[:n][a.vowel[:n]]) - FLOOR)
+
+
 def compare(tgt, syn):
     n = min(len(tgt.level), len(syn.level))
-    sp = tgt.speech[:n] & (tgt.level[:n] > tgt.level[:n][tgt.speech[:n]].max() - 45)
+    lt, ls = floored(tgt, n), floored(syn, n)
+    # the envelope only where the singer is clearly sounding (a stop's closure in the recording is
+    # reverb and separation residue)
+    sp = tgt.speech[:n] & (lt > np.median(lt[tgt.vowel[:n]]) - FLOOR)
     d = tgt.env[:, :n][:, sp] - syn.env[:, :n][:, sp]
     env = float(np.mean(np.sqrt((d**2).mean(0))))
-    r = float(np.corrcoef(tgt.level[:n][sp], syn.level[:n][sp])[0, 1])
+    r = float(np.corrcoef(lt[tgt.speech[:n]], ls[tgt.speech[:n]])[0, 1])
     agree = float(np.mean(tgt.voiced[:n][tgt.speech[:n]] == syn.voiced[:n][tgt.speech[:n]]))
     terms = {"envelope dB": (None, env, env / UNITS["envelope"])}
     for (a, b), x, z in zip(BANDS, tgt.bands, syn.bands):
