@@ -25,7 +25,7 @@ use crate::{Ctx, FS, peak, wav_name};
 use chimera::anatomy::human::{ArticKey, ArticPatch, BodyMix};
 use chimera::control::score::ControlKey;
 use chimera::phonetics::english::arpabet_to_segments;
-use chimera::phonetics::planner::{PlanOptions, plan_utterance};
+use chimera::phonetics::planner::{PlanOptions, diphthong_parts, plan_utterance};
 use chimera::phonetics::{Intonation, Segment};
 use chimera::voice::habits::Habits;
 use chimera::voice::human_voice::{HumanVoice, SourcePatch};
@@ -48,6 +48,9 @@ struct Track {
     f0: Curve,
     #[serde(default)]
     pressure: Option<Curve>,
+    /// Experimental singing timing: sustain long diphthongs before their closing vowel.
+    #[serde(default)]
+    sustain_vowels: bool,
 }
 
 #[derive(Deserialize)]
@@ -90,7 +93,23 @@ struct Chunk {
     segs: Vec<Segment>,
 }
 
-fn chunks(p: &Phrase) -> Result<Vec<Chunk>, String> {
+fn sustain(s: Segment) -> Vec<Segment> {
+    let Some((a, b)) = diphthong_parts(&s.ipa) else {
+        return vec![s];
+    };
+    let duration = s.dur.unwrap();
+    if duration <= 0.4 {
+        return vec![s];
+    }
+    // A held note sustains its nucleus; the closing vowel is a short release.
+    let release = (duration * 0.2).min(0.2);
+    vec![
+        Segment { ipa: a.into(), dur: Some(duration - release), word_end: None, ..s.clone() },
+        Segment { ipa: b.into(), dur: Some(release), ..s },
+    ]
+}
+
+fn chunks(p: &Phrase, sustain_vowels: bool) -> Result<Vec<Chunk>, String> {
     let phones: Vec<(&str, f64, f64, bool)> = p
         .words
         .iter()
@@ -117,15 +136,16 @@ fn chunks(p: &Phrase) -> Result<Vec<Chunk>, String> {
         };
         s.dur = Some((end - t0).max(0.02));
         s.word_end = Some(word_end);
+        let segs = if sustain_vowels { sustain(s) } else { vec![s] };
         match out.last_mut() {
             Some(c) if (t0 - c.t1).abs() < 1e-6 => {
-                c.segs.push(s);
+                c.segs.extend(segs);
                 c.t1 = end;
             }
             _ => out.push(Chunk {
                 t0,
                 t1: end,
-                segs: vec![s],
+                segs,
             }),
         }
     }
@@ -178,7 +198,7 @@ pub fn render(ctx: &Ctx, a: &[String]) -> Result<(), String> {
     for c in tr
         .phrases
         .iter()
-        .map(chunks)
+        .map(|p| chunks(p, tr.sustain_vowels))
         .collect::<Result<Vec<_>, _>>()?
         .into_iter()
         .flatten()
@@ -258,4 +278,47 @@ pub fn render(ctx: &Ctx, a: &[String]) -> Result<(), String> {
         fixed(worst * 1000.0, 0)
     );
     Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn held_home_closes_its_vowel_at_the_end_without_moving_the_word() {
+        let phrase = Phrase { words: vec![Word { phones: vec![
+            ("HH".into(), 0.0, 0.1), ("OW1".into(), 0.1, 2.4), ("M".into(), 2.4, 2.5),
+        ] }] };
+        let chunks = chunks(&phrase, true).unwrap();
+        assert_eq!(chunks.len(), 1);
+        let c = &chunks[0];
+        assert_eq!((c.t0, c.t1), (0.0, 2.5));
+        assert_eq!(c.segs.iter().map(|s| s.ipa.as_str()).collect::<Vec<_>>(), ["h", "o", "u", "m"]);
+        assert!((c.segs[1].dur.unwrap() - 2.1).abs() < 1e-9);
+        assert!((c.segs[2].dur.unwrap() - 0.2).abs() < 1e-9);
+        let plan = plan_utterance(&c.segs, &PlanOptions { sung: Some(true), ..Default::default() });
+        assert!((plan.segments.last().unwrap().t1 - plan.segments[0].t0 - 2.5).abs() < 1e-9);
+    }
+
+    #[test]
+    fn short_diphthongs_and_steady_vowels_keep_their_duration_and_word_end() {
+        for arpa in ["OW1", "IY1"] {
+            let mut s = arpabet_to_segments(arpa).pop().unwrap();
+            s.dur = Some(0.1);
+            s.word_end = Some(true);
+            let parts = sustain(s.clone());
+            assert_eq!(parts, vec![s]);
+            assert!((parts.iter().map(|s| s.dur.unwrap()).sum::<f64>() - 0.1).abs() < 1e-9);
+            assert_eq!(parts.last().unwrap().word_end, Some(true));
+        }
+    }
+
+    #[test]
+    fn aligned_tracks_keep_their_existing_pronunciation_by_default() {
+        let tr: Track = serde_json::from_str(r#"{"duration":3,"phrases":[{"words":[{"phones":[["OW1",0,2]]}]}],"f0":{"hop":0.005,"hz":[110]}}"#).unwrap();
+        assert!(!tr.sustain_vowels);
+        let c = chunks(&tr.phrases[0], tr.sustain_vowels).unwrap();
+        assert_eq!(c[0].segs.len(), 1);
+        assert_eq!(c[0].segs[0].ipa, "oʊ");
+    }
 }

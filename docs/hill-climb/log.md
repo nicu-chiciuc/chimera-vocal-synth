@@ -1407,3 +1407,26 @@ No batch uses it yet: whether it decides the next batch, and Whisper guards, is 
   - **The male /ʃ/ centroid**, overshot by batch 2 (3.48 kHz, men 3.13).
   - **A diagnostic:** the voice lacks 1–4 kHz presence after batch 1 (female 1–2 kHz −16.1 dB re
     0–8 kHz, women −10.8). That is a spectral shape to fix, not a tilt.
+
+## Recorded-song vowel timing (2026-11-09, listening experiment)
+
+- Hypothesis: `render track` expands a held diphthong with speech's 55/45 timing. A long
+  "home" therefore spends nearly half its vowel on the closing sound. Sustaining the nucleus
+  and delaying the closing sound might improve the owner's reported pronunciation problem.
+- Change: an optional `sustain_vowels: true` track field splits diphthongs longer than 400 ms
+  before speech planning. The nucleus takes the sustain; the closing vowel takes 20% of the
+  duration, capped at 200 ms. Word boundaries and total duration remain fixed. Speech, the
+  normal singing planner, and tracks without the option keep their existing behavior.
+- Country Roads, training phrases 0–9, same untuned male voice: the original render had
+  speaker similarity 0.3046 and Whisper word error 29.55%. A first version that changed all
+  diphthongs and capped their closing vowel at 120 ms gave 0.2975 and 34.09%. The narrower
+  version gave 0.3076 and 38.64%. Held-out phrases were not used after the training failures.
+- Verdict: neither variant passed the clarity guard. The original audio remains the default.
+  The narrower variant is available locally as "Untuned male (held vowels test)" for the
+  owner to judge the sustained vowels by ear. This is an opt-in prototype, not an accepted
+  improvement. Audio, animation, render input, and measurements remain outside git.
+- Validation: three CLI regressions cover the long diphthong's timing, unchanged short vowels,
+  and unchanged default track behavior. `bun run test` and `bun run typecheck` pass. No
+  engine functions, calibrated tables, goldens, or judges changed.
+- Still open: this does not alter steady /i/ in "trees" or the aligner's long final nasals.
+  Those need separate evidence; this experiment does not establish their causes.
