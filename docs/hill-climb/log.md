@@ -1430,3 +1430,21 @@ No batch uses it yet: whether it decides the next batch, and Whisper guards, is 
   engine functions, calibrated tables, goldens, or judges changed.
 - Still open: this does not alter steady /i/ in "trees" or the aligner's long final nasals.
   Those need separate evidence; this experiment does not establish their causes.
+
+## Clipped phrase-initial vowel (2026-11-09, alignment repair)
+
+- The owner reported that "all" at the start of the second verse was nearly inaudible.
+  The score gave its vowel 40 ms, starting at 55.636 s; the reference already had a voiced
+  onset at 55.420 s. The aligner's word cut and onset tolerance had discarded that audio.
+- `refine.py` now recovers clipped phrase-initial vowels from adjacent voiced reference
+  frames above the local energy floor. It looks back at most 350 ms, stops at a 30 ms break,
+  requires 60 ms of evidence, and cannot cross the previous phrase. It leaves the vowel's
+  end and every following phone fixed. `--onsets-only` applies just this repair.
+- Country Roads: exactly one onset changed. "All" now has 256 ms of vowel; "my memories"
+  and the rest of the score are unchanged. Reapplying the repair makes no further changes.
+- The untuned render's recovered onset window rose from -55.8 to -16.1 dBFS. Whisper now
+  hears the initial "All", although it still gets other words in that line wrong. Its
+  phrase word error fell from 83.33% to 66.67%; this does not establish a whole-song gain.
+- Three Python regressions cover the clipped vowel, phrase and pause boundaries, weak
+  pitched leakage, consonant onsets, and idempotence. `bun run test` and typecheck pass.
+  Reference data and rendered voices remain outside git.

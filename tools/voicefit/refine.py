@@ -1,6 +1,6 @@
 """Repair the aligner's vowel-to-vowel boundaries in a track, from the singer's formants:
 
-  refine.py <dir> [--dry]
+  refine.py <dir> [--dry] [--onsets-only]
 
 The Montreal Forced Aligner is trained on speech. In singing it often puts the boundary between
 two vowels in the wrong place when nothing but a light consonant separates them: in Hurt it gave
@@ -48,19 +48,72 @@ def is_vowel(p):
     return p[-1].isdigit()
 
 
+def recover_vowel_onsets(track, db, voiced):
+    """Recover a clipped phrase-initial vowel from the adjacent voiced reference audio.
+
+    Only vowels under 120 ms qualify. Look back at most 350 ms, never into the previous
+    phrase, and stop at a 30 ms break. Require 60 ms of voiced evidence before extending.
+    The vowel's end and every following phone stay fixed.
+    """
+    changes, previous_end = 0, 0.0
+    for phrase in track["phrases"]:
+        phones = [p for w in phrase["words"] for p in w["phones"]]
+        if not phones:
+            continue
+        first = phones[0]
+        lower = max(previous_end, first[1] - 0.35)
+        previous_end = max(previous_end, max(p[2] for p in phones))
+        if not is_vowel(first[0]) or first[2] - first[1] >= 0.12:
+            continue
+        start, end = int(first[1] / STEP), int(np.ceil(first[2] / STEP))
+        end = min(end, len(db), len(voiced))
+        if start >= end:
+            continue
+        floor = float(np.max(db[start:end])) - 18.0
+        earliest, gap, evidence = start, 0, 0
+        for i in range(start - 1, int(np.ceil(lower / STEP)) - 1, -1):
+            if voiced[i] and db[i] >= floor:
+                earliest, gap, evidence = i, 0, evidence + 1
+            else:
+                gap += 1
+                if gap >= 3:
+                    break
+        if evidence >= 6 and first[1] - earliest * STEP >= 0.06:
+            onset = round(earliest * STEP, 3)
+            print(f"{phrase['text'][:28]:28s} {first[0]} onset {first[1]:.3f} -> {onset:.3f} s")
+            first[1] = onset
+            changes += 1
+    return changes
+
+
+def save_track(d, track, dry, changes):
+    if not dry and changes:
+        if not (d / "track-mfa.json").exists():
+            shutil.copy(d / "track.json", d / "track-mfa.json")
+        json.dump(track, open(d / "track.json", "w"))
+
+
 def main():
     d = pathlib.Path(sys.argv[1])
     dry = "--dry" in sys.argv
     track = json.load(open(d / "track.json"))
-    table = json.load(open(REPO / "crates/chimera/src/phonetics/vowelTargets.generated.json"))["male"]
     y, sr = librosa.load(d / "target.wav", sr=16000)
+    hz = np.array(track["f0"]["hz"])
+    hop = track["f0"]["hop"]
+    n = int(len(y) / sr / STEP)
+    pitch_voiced = np.array([hz[min(len(hz) - 1, int(i * STEP / hop))] > 0 for i in range(n)])
+    rms = librosa.feature.rms(y=y, frame_length=400, hop_length=int(sr * STEP))[0][:n]
+    changes = recover_vowel_onsets(track, 20 * np.log10(rms + 1e-9), pitch_voiced)
+    if "--onsets-only" in sys.argv:
+        save_track(d, track, dry, changes)
+        print(f"{changes} vowel onsets recovered")
+        return
+    table = json.load(open(REPO / "crates/chimera/src/phonetics/vowelTargets.generated.json"))["male"]
     snd = parselmouth.Sound(y, sr)
     fm = snd.to_formant_burg(time_step=STEP, max_number_of_formants=5, maximum_formant=5000)
     n = int(snd.duration / STEP)
     F = np.array([[fm.get_value_at_time(k, i * STEP) for k in (1, 2, 3)] for i in range(n)])
-    hz = np.array(track["f0"]["hz"])
-    hop = track["f0"]["hop"]
-    voiced = np.array([hz[min(len(hz) - 1, int(i * STEP / hop))] > 0 for i in range(n)]) & np.all(np.isfinite(F), 1)
+    voiced = pitch_voiced[:n] & np.all(np.isfinite(F), 1)
     # scale the table to this singer: median ratio of his formants to the table's over his vowels
     pairs = []
     for ph in track["phrases"]:
@@ -84,7 +137,6 @@ def main():
         best = np.min([np.abs(lf - np.log(t)).sum(1) for t in targets[base(v)]], 0)
         return float(best.sum()), len(idx)
 
-    changes = 0
     for ph in track["phrases"]:
         flat = [x for w in ph["words"] for x in w["phones"]]
         for i in range(len(flat) - 1):
@@ -180,10 +232,7 @@ def main():
             held += 1
     print(f"{held} held vowels changed")
     changes += held
-    if not dry and changes:
-        if not (d / "track-mfa.json").exists():
-            shutil.copy(d / "track.json", d / "track-mfa.json")
-        json.dump(track, open(d / "track.json", "w"))
+    save_track(d, track, dry, changes)
 
 
 if __name__ == "__main__":
