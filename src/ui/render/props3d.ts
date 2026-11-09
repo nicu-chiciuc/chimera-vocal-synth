@@ -1,7 +1,7 @@
 /**
  * Stage props for the 3D head (`Anatomy3D.stage`): a wide-brimmed hat on the head, and under it a
  * whole performer standing on a stage. A torso and legs, arms with hands whose fingers fret and
- * strum an acoustic guitar, a microphone on a boom stand in front of the mouth, and the stage
+ * strum an acoustic guitar, a microphone on a straight stand in front of the mouth, and the stage
  * itself: a platform, a curtain behind, a pool of light at the feet. Glowing lines like the head.
  *
  * Body cm, the head's frame: x forward, y up, z out of the right side of the face, glottis at the
@@ -465,26 +465,38 @@ function performer(head: HeadSections, k: number, face: V3): { scene: PropGroup[
   }
   curtain.path(rail);
 
-  // ---- the microphone on its boom stand: the base out to the performer's left and in front,
-  // the pole up past the head, the boom reaching down over the guitar's headstock to the mouth
-  const stand = new Lines(), mic = new Lines(), grille = new Lines();
+  // ---- the microphone on a straight stand, as on a club stage: a heavy round base, one pole
+  // with its clutch at mid height, the mic in a clip at the top tilted up toward the mouth, and
+  // its cable hanging in a loop down to the floor. The pole stands in front of the guitar and a
+  // little to the performer's right, so from the camera's three-quarter view it passes beside
+  // the mouth, not over it
+  const stand = new Lines(), mic = new Lines(), grille = new Lines(), cable = new Lines();
   const mouth = Fp(4.6, -3.7, 0);
-  const M = Fp(16.5, -7, -3.5);
-  const d = norm(sub(mouth, M));
+  const base = Fp(27, -FLOOR, 12);
+  const top = Fp(27, -20, 12);
+  // the mic points between the mouth and straight up: steeper than the line to the mouth, as a
+  // singer who stands back with a guitar sets it
+  const d = norm(add(mul(norm(sub(mouth, top)), 0.6), [0, 0.5, 0]));
   const du = perp([0, 1, 0], d), dv = cross(d, du);
-  const base = Fp(40, -FLOOR, -70);
-  const top = Fp(40, 8, -70);
-  for (const r of [14, 13]) stand.path(circle(add(base, [0, (14 - r) * 1.8 * k, 0]), ex, ez, r * k, 40));
-  stand.path(circle(add(base, [0, 2 * k, 0]), ex, ez, 3.2 * k, 16));
-  tube(stand, [add(base, [0, 2 * k, 0]), add(base, [0, 60 * k, 0]), top], () => 1.3 * k, 4, 1, 10);
-  tube(stand, [add(top, [0, -2.5 * k, 0]), add(top, [0, 2.5 * k, 0])], () => 2.4 * k, 6, 1, 14);
-  const handleEnd = sub(M, mul(d, 15.5 * k));
-  const clip = sub(handleEnd, mul(d, 1.2 * k));
-  const boomDir = norm(sub(clip, top));
-  tube(stand, [sub(top, mul(boomDir, 14 * k)), top, clip], () => 1.1 * k, 4, 1, 10);
-  tube(stand, [sub(top, mul(boomDir, 14 * k)), sub(top, mul(boomDir, 8 * k))], () => 2.6 * k, 6, 1, 14);
-  tube(mic, [sub(handleEnd, mul(d, 0.5 * k)), handleEnd, add(handleEnd, mul(d, 4 * k)), sub(M, mul(d, 2.6 * k))], (i) => k * (i === 0 ? 1.9 : lerp(1.3, 1.55, i / 3)), 6, 1, 14);
+  const handleEnd = add(top, mul(d, 1.5 * k));
+  const M = add(top, mul(d, 17.5 * k));
+  for (const [r, h] of [[14, 0.3], [13.2, 1.6], [9, 2.8], [4.6, 3.6]]) stand.path(circle(add(base, [0, h * k, 0]), ex, ez, r * k, 40));
+  const CLUTCH = 86;
+  tube(stand, [add(base, [0, 3.6 * k, 0]), add(base, [0, CLUTCH * k, 0])], () => 1.45 * k, 4, 1, 12);
+  tube(stand, [add(base, [0, (CLUTCH - 1) * k, 0]), add(base, [0, (CLUTCH + 5.5) * k, 0])], () => 2.3 * k, 6, 1, 14);
+  tube(stand, [add(base, [0, (CLUTCH + 5.5) * k, 0]), top], () => 1.05 * k, 4, 1, 12);
+  // the clip: a short sleeve round the handle's end, on a knuckle at the top of the pole
+  stand.path(circle(top, ex, ez, 1.6 * k, 12));
+  tube(stand, [sub(handleEnd, mul(d, 1 * k)), add(handleEnd, mul(d, 4 * k))], () => 2.3 * k, 6, 1, 12);
+  // the mic: a slim handle widening to the head
+  tube(mic, [handleEnd, add(handleEnd, mul(d, 6 * k)), sub(M, mul(d, 3 * k))], (i) => k * lerp(1.3, 1.75, i / 2), 6, 1, 14);
   for (const [off, r] of [[0, 2.9], [1.7, 2.3], [-1.7, 2.4], [2.6, 1.2]]) grille.path(circle(add(M, mul(d, off * k)), du, dv, r * k, 24));
+  // the cable: out of the handle, a loose loop down past the pole, across the floor
+  const plug = sub(handleEnd, mul(d, 2.5 * k));
+  cable.path(spline([
+    plug, add(plug, [4 * k, -12 * k, 7 * k]), add(base, [7 * k, 70 * k, 10 * k]), add(base, [9 * k, 30 * k, 8 * k]),
+    add(base, [13 * k, 0.4 * k, 11 * k]), add(base, [30 * k, 0.4 * k, 24 * k]), add(base, [55 * k, 0.4 * k, 28 * k]),
+  ], 8));
   for (const a of [0, Math.PI / 2]) {
     const w = add(mul(du, Math.cos(a)), mul(dv, Math.sin(a)));
     const pts: V3[] = [];
@@ -504,6 +516,7 @@ function performer(head: HeadSections, k: number, face: V3): { scene: PropGroup[
     { lines: stand.lines, color: V.blueMid, width: 0.85, alpha: 0.7 },
     { lines: mic.lines, color: V.blueMid, width: 0.85, alpha: 0.75 },
     { lines: grille.lines, color: V.amber, width: 1.05, alpha: 0.9 },
+    { lines: cable.lines, color: V.blueDim, width: 0.9, alpha: 0.7 },
   ];
 
   // ---- the moving parts
