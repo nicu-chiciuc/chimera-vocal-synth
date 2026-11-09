@@ -23,6 +23,8 @@ import soundfile as sf
 
 FS = 48000
 HOP = 0.005
+MAX_LINE = 10.0  # past this a line breaks at the next short pause (a singer who hardly stops)
+SHORT_GAP = 0.12
 LINE_GAP = 0.5  # a pause this long between words starts a new line
 PAD = 0.3  # audio around each line for the aligner
 
@@ -35,8 +37,14 @@ def cut(vocal, words_path, t0, t1, out):
     words = [w for w in json.load(open(words_path)) if w["t0"] >= t0 and w["t1"] <= t1]
     lines = []
     for w in words:
-        w = {"w": w["w"], "t0": round(w["t0"] - t0, 3), "t1": round(w["t1"] - t0, 3)}
-        if not lines or w["t0"] - lines[-1][-1]["t1"] > LINE_GAP:
+        w = {"w": w["w"], "t0": round(w["t0"] - t0, 3), "t1": round(w["t1"] - t0, 3), **({"line": w["line"]} if "line" in w else {})}
+        gap = w["t0"] - lines[-1][-1]["t1"] if lines else 0.0
+        # known lyrics (lyrics.py) carry their line: break there, and only there
+        if "line" in w:
+            new = not lines or w["line"] != lines[-1][-1]["line"]
+        else:
+            new = not lines or gap > LINE_GAP or (w["t1"] - lines[-1][0]["t0"] > MAX_LINE and gap > SHORT_GAP)
+        if new:
             lines.append([])
         lines[-1].append(w)
     y16 = librosa.resample(y, orig_sr=FS, target_sr=16000)
@@ -48,7 +56,8 @@ def cut(vocal, words_path, t0, t1, out):
         d = out / "mfa" / "corpus" / name
         d.mkdir(exist_ok=True)
         sf.write(d / f"{name}.wav", y16[int(a * 16000) : int(b * 16000)], 16000)
-        text = " ".join(w["w"].strip(",.?!").lower() for w in line)
+        # the aligner's dictionary spells with straight apostrophes and no outer quotes ("‘cause")
+        text = " ".join(w["w"].replace("’", "'").replace("‘", "'").strip(",.?!;:'\"").lower() for w in line)
         (d / f"{name}.lab").write_text(text + "\n")
         spans.append({"name": name, "t0": round(a, 3), "t1": round(b, 3), "text": text})
     json.dump({"source": str(vocal), "t0": t0, "t1": t1, "lines": spans}, open(out / "lines.json", "w"), indent=1)

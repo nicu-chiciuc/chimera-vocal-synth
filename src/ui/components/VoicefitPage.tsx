@@ -41,6 +41,10 @@ interface Candidate {
   label: string;
   about: string;
   wav: string;
+  /** what the page plays: an MP3 of the render */
+  audio?: string;
+  /** the level that matches the voice to the singer over his sung lines */
+  gain?: number;
   /** the voice's telemetry over the excerpt (render track --tele) */
   tele?: string;
   body?: BodyMix;
@@ -49,8 +53,11 @@ interface Candidate {
 interface Catalog {
   title: string;
   target: string;
-  /** the separated instrumental on the same timeline (prepare.py backing) */
+  /** the separated instrumental on the same timeline (prepare.py backing), and its MP3 */
   accompaniment?: string;
+  band?: string;
+  /** the track's length (s) */
+  duration?: number;
   /** the band's strums (note onsets in the instrumental, s): the performer's right hand */
   strums?: number[];
   lines: Line[];
@@ -58,7 +65,6 @@ interface Catalog {
 }
 
 const ROOT = `${import.meta.env.BASE_URL}voicefit/`;
-const TARGET = "target";
 const BACKING = "backing";
 /** the performer's look: airflow and sound pressure on, no measurement labels */
 const VIEW: ViewFlags = { pressure: true, particles: true, grid: false, calipers: false };
@@ -67,7 +73,7 @@ const ORIGINAL = "https://github.com/jamesondh/chimera-vocal-synth";
 
 function setName(): string {
   const s = new URLSearchParams(window.location.search).get("voicefit");
-  return s && /^[\w-]+$/.test(s) ? s : "song";
+  return s && /^[\w-]+$/.test(s) ? s : "hurt";
 }
 
 /** the last index of a sorted list at or before t, or −1 */
@@ -92,18 +98,6 @@ function strumAt(on: number[], t: number): number {
   return -to + 2 * to * u * u * (3 - 2 * u);
 }
 
-/** RMS over the singer's sung lines (so a voice is matched to him, not to the silences) */
-function sungRms(b: AudioBuffer, lines: Line[]): number {
-  const x = b.getChannelData(0);
-  let s = 0, n = 0;
-  for (const l of lines) {
-    const a = Math.max(0, Math.floor(l.t0 * b.sampleRate)), z = Math.min(x.length, Math.floor(l.t1 * b.sampleRate));
-    for (let i = a; i < z; i++) s += x[i] * x[i];
-    n += Math.max(0, z - a);
-  }
-  return Math.sqrt(s / Math.max(1, n)) + 1e-9;
-}
-
 /** "Round 2: + articulation habits" → "Round 2" */
 const shortLabel = (c: Candidate) => c.label.split(":")[0];
 const clock = (t: number) => `${Math.floor(t / 60)}:${String(Math.floor(t % 60)).padStart(2, "0")}`;
@@ -115,7 +109,9 @@ export function VoicefitPage() {
   const [error, setError] = useState<string | null>(null);
   const [music, setMusic] = useState(true);
   const [video, setVideo] = useState(true);
-  const [loaded, setLoaded] = useState(0);
+  const [sets, setSets] = useState<string[]>([]);
+  /** voices still loading (the play button says so) */
+  const [pending, setPending] = useState(0);
   const [teles, setTeles] = useState<Map<string, TeleTrack>>(new Map());
   /** the voice the player plays */
   const [sel, setSel] = useState<string | null>(null);
@@ -125,7 +121,7 @@ export function VoicefitPage() {
   const [, setTick] = useState(0);
   const ctx = useRef<AudioContext | null>(null);
   const buffers = useRef(new Map<string, AudioBuffer>());
-  const gains = useRef(new Map<string, number>());
+  const loading = useRef(new Map<string, Promise<AudioBuffer | null>>());
   const current = useRef<AudioBufferSourceNode | null>(null);
   const musicSrc = useRef<AudioBufferSourceNode | null>(null);
   /** the playhead: started at audio time `at` from `t0` */
@@ -133,6 +129,10 @@ export function VoicefitPage() {
   const epoch = useRef(0);
 
   useEffect(() => {
+    fetch(ROOT + "sets.json", { cache: "no-store" })
+      .then((r) => (r.ok ? (r.json() as Promise<string[]>) : []))
+      .then(setSets)
+      .catch(() => {});
     fetch(base + "candidates.json", { cache: "no-store" })
       .then(async (r) => {
         if (!r.ok) throw new Error(`${set}/candidates.json: ${r.status} ${await r.text()}`);
@@ -145,48 +145,56 @@ export function VoicefitPage() {
 
   const audio = useCallback(() => (ctx.current ??= new AudioContext()), []);
 
-  // decode the singer (the level reference), the band and every voice; load each voice's telemetry
+  /** a voice's (or the band's) audio, fetched and decoded once, when first wanted: a phone loads
+   *  only what it plays (the MP3 when the catalog has one) */
+  const load = useCallback(
+    (id: string): Promise<AudioBuffer | null> => {
+      const have = loading.current.get(id);
+      if (have) return have;
+      const c = cat?.candidates.find((x) => x.id === id);
+      const file = id === BACKING ? (cat?.band ?? cat?.accompaniment) : (c?.audio ?? c?.wav);
+      if (!file) return Promise.resolve(null);
+      setPending((n) => n + 1);
+      const p = fetch(base + file)
+        .then(async (r) => {
+          if (!r.ok) throw new Error(`${file}: ${r.status}`);
+          const b = await audio().decodeAudioData(await r.arrayBuffer());
+          buffers.current.set(id, b);
+          return b;
+        })
+        .catch((e) => {
+          setError(e instanceof Error ? e.message : String(e));
+          return null;
+        })
+        .finally(() => setPending((n) => n - 1));
+      loading.current.set(id, p);
+      return p;
+    },
+    [cat, base, audio],
+  );
+  /** a voice's telemetry, for the performer, when it is first shown */
+  const teleLoading = useRef(new Set<string>());
+  const loadTele = useCallback(
+    (id: string) => {
+      const c = cat?.candidates.find((x) => x.id === id);
+      if (!c?.tele || teleLoading.current.has(id)) return;
+      teleLoading.current.add(id);
+      void fetch(base + c.tele)
+        .then(async (r) => (r.ok ? new TeleTrack(await r.arrayBuffer()) : null))
+        .then((t) => t && setTeles((m) => new Map(m).set(id, t)));
+    },
+    [cat, base],
+  );
+  // the band and the first voice straight away
   useEffect(() => {
-    if (!cat) return;
-    const files: [string, string][] = [[TARGET, cat.target], ...cat.candidates.map((c) => [c.id, c.wav] as [string, string])];
-    if (cat.accompaniment) files.push([BACKING, cat.accompaniment]);
-    let alive = true;
-    void Promise.all(
-      files.map(async ([id, file]) => {
-        const r = await fetch(base + file);
-        if (!r.ok) throw new Error(`${file}: ${r.status}`);
-        const b = await audio().decodeAudioData(await r.arrayBuffer());
-        if (!alive) return;
-        buffers.current.set(id, b);
-        setLoaded((n) => n + 1);
-      }),
-    )
-      .then(() => {
-        const ref = buffers.current.get(TARGET);
-        if (!ref) return;
-        const r = sungRms(ref, cat.lines);
-        for (const c of cat.candidates) {
-          const b = buffers.current.get(c.id);
-          if (b) gains.current.set(c.id, r / sungRms(b, cat.lines));
-        }
-      })
-      .catch((e) => setError(e instanceof Error ? e.message : String(e)));
-    void Promise.all(
-      cat.candidates
-        .filter((c) => c.tele)
-        .map(async (c) => {
-          const r = await fetch(base + c.tele);
-          return r.ok ? ([c.id, new TeleTrack(await r.arrayBuffer())] as const) : null;
-        }),
-    ).then((all) => alive && setTeles(new Map(all.filter((x) => x !== null))));
-    return () => {
-      alive = false;
-    };
-  }, [cat, audio, base]);
+    if (!cat || !sel) return;
+    void load(BACKING);
+    void load(sel);
+    loadTele(sel);
+  }, [cat, sel, load, loadTele]);
 
-  const total = cat ? cat.candidates.length + 1 + (cat.accompaniment ? 1 : 0) : 1;
-  const ready = loaded >= total;
-  const end = Math.max(buffers.current.get(BACKING)?.duration ?? 0, buffers.current.get(TARGET)?.duration ?? 0);
+  const ready = pending === 0 && !!sel && buffers.current.has(sel);
+  const end = cat?.duration ?? buffers.current.get(BACKING)?.duration ?? 0;
 
   /** the playhead (s), or null while paused */
   const now = useCallback((): number | null => {
@@ -223,7 +231,7 @@ export function VoicefitPage() {
       const src = ac.createBufferSource();
       src.buffer = b;
       const gain = ac.createGain();
-      gain.gain.value = gains.current.get(id) ?? 1;
+      gain.gain.value = cat?.candidates.find((c) => c.id === id)?.gain ?? 1;
       src.connect(gain).connect(ac.destination);
       // voice and band start on the same sample of the same timeline
       const at = ac.currentTime + 0.03;
@@ -246,7 +254,7 @@ export function VoicefitPage() {
       setPlaying(true);
       epoch.current++;
     },
-    [audio, halt, end],
+    [audio, halt, end, cat],
   );
 
   const toggle = () => {
@@ -262,11 +270,20 @@ export function VoicefitPage() {
     if (now() !== null && sel) start(sel, to, music);
     else setPos(to);
   };
-  /** another voice from the same moment */
+  /** another voice from the same moment; one not loaded yet takes over once it is (the voice
+   *  playing goes on meanwhile) */
   const switchTo = (id: string) => {
-    const t = now();
-    if (t !== null) start(id, t, music);
-    else setSel(id);
+    setSel(id);
+    loadTele(id);
+    if (buffers.current.has(id)) {
+      const t = now();
+      if (t !== null) start(id, t, music);
+      return;
+    }
+    void load(id).then(() => {
+      const t = now();
+      if (t !== null && controls.current.sel === id) start(id, t, controls.current.music);
+    });
   };
   /** the band on or off, from the same moment */
   const setBand = (on: boolean) => {
@@ -274,8 +291,8 @@ export function VoicefitPage() {
     const t = now();
     if (t !== null && sel) start(sel, t, on);
   };
-  const controls = useRef({ toggle, seek, switchTo, now, pos });
-  controls.current = { toggle, seek, switchTo, now, pos };
+  const controls = useRef({ toggle, seek, switchTo, now, pos, sel, music });
+  controls.current = { toggle, seek, switchTo, now, pos, sel, music };
 
   // the time and the slider while playing
   useEffect(() => {
@@ -316,7 +333,11 @@ export function VoicefitPage() {
   const overlay = useMemo(() => (words ? mouthWords(() => (clockRef.current ? wordAt(words, now() ?? -1) : null), V.green, 1) : undefined), [words, now]);
 
   // the performer: the selected voice's movements, reading the playhead each frame
-  const performer = sel && teles.has(sel) ? sel : null;
+  // the selected voice's movements once loaded; until then the last voice shown (dropping the view
+  // while they load would remount it and replay its opening turn)
+  const lastShown = useRef<string | null>(null);
+  const performer = sel && teles.has(sel) ? sel : lastShown.current && teles.has(lastShown.current) ? lastShown.current : null;
+  lastShown.current = performer;
   const byId = useMemo(() => new Map(cat?.candidates.map((c) => [c.id, c]) ?? []), [cat]);
   const feed = useMemo<HeadFeed | null>(() => {
     const c = performer ? byId.get(performer) : undefined;
@@ -358,9 +379,16 @@ export function VoicefitPage() {
   return (
     <div className="vf">
       <header className="vf-head">
-        <h1 className="vf-title">{cat.title.split("/")[0].trim().replace(/^\w/, (s) => s.toUpperCase())}</h1>
+        <h1 className="vf-title">{cat.title}</h1>
         <span className="vf-sub">sung by CHIMERA, a simulated vocal tract</span>
         <nav className="vf-links">
+          {sets
+            .filter((s) => s !== set)
+            .map((s) => (
+              <a key={s} href={`?voicefit=${s}`}>
+                {s.replace(/-/g, " ").replace(/^\w/, (x) => x.toUpperCase())} →
+              </a>
+            ))}
           <a href={FORK} target="_blank" rel="noreferrer">
             This fork
           </a>
@@ -393,8 +421,8 @@ export function VoicefitPage() {
           ))}
         </div>
         <div className="vf-bar">
-          <Chip toggle={false} className="vf-playbtn" onClick={toggle} disabled={!ready}>
-            {!ready ? `Loading ${Math.round((100 * loaded) / total)} %` : playing ? "❚❚ Pause" : "▶ Play"}
+          <Chip toggle={false} className="vf-playbtn" onClick={toggle} disabled={!ready && !playing}>
+            {playing ? "❚❚ Pause" : ready ? "▶ Play" : "Loading…"}
           </Chip>
           <span className="vf-time">
             {clock(at)} / {clock(end)}

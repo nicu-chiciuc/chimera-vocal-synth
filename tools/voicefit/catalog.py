@@ -1,6 +1,10 @@
 """Collect a fit's candidates for the comparison page (the app's `?voicefit`):
 
-  catalog.py <dir> [--train 0-3] [--hold 4-7]
+  catalog.py <dir> [--train 0-3] [--hold 4-7] [--title "Song name"] [--no-measure]
+
+--no-measure skips the acoustic scores and the judges (the playthrough page doesn't show them).
+Each voice and the band also get an MP3 (what the page plays), and each voice its gain: the
+level that matches it to the singer over his sung lines.
 
 Writes <dir>/candidates.json: the singer's lines (text, times, each word's times, training or
 held-out), the band's strums (onsets in accompaniment.wav, if there is one) and every
@@ -19,6 +23,7 @@ profile's `fit` field.
 import json
 import os
 import pathlib
+import subprocess
 import sys
 
 sys.path.insert(0, str(pathlib.Path(__file__).parent))
@@ -41,13 +46,34 @@ def strums(path):
     return [round(float(t), 3) for t in librosa.onset.onset_detect(y=y, sr=sr, units="time", backtrack=False)]
 
 
+def mp3(wav):
+    """A 160 kbit/s MP3 beside a WAV (for the page: a phone fetches 5 MB a voice, not 25), kept
+    while it is newer than the WAV."""
+    out = wav.with_suffix(".mp3")
+    if not out.exists() or out.stat().st_mtime < wav.stat().st_mtime:
+        subprocess.run(["ffmpeg", "-y", "-loglevel", "error", "-i", str(wav), "-b:a", "160k", str(out)], check=True)
+    return out
+
+
+def sung_rms(path, lines):
+    """RMS over the singer's sung lines (a voice is matched to him, not to the silences)"""
+    import librosa
+    import numpy as np
+
+    y, sr = librosa.load(path, sr=16000, mono=True)
+    parts = [y[int(l["t0"] * sr) : int(l["t1"] * sr)] for l in lines]
+    x = np.concatenate([p for p in parts if len(p)])
+    return float(np.sqrt(np.mean(x**2)) + 1e-9)
+
+
 def main():
     args = sys.argv[1:]
     d = pathlib.Path(args[0]).resolve()
-    opt = {"--train": "0-3", "--hold": "4-7"}
+    opt = {"--train": "0-3", "--hold": "4-7", "--title": ""}
     for k in opt:
         if k in args:
             opt[k] = args[args.index(k) + 1]
+    measure = "--no-measure" not in args
     splits = {"train": compare.parse_which(opt["--train"]), "heldout": compare.parse_which(opt["--hold"])}
     track = json.load(open(d / "track.json"))
     target = str(d / "target.wav")
@@ -98,11 +124,14 @@ def main():
 
     judge = None
     out = []
+    ref = sung_rms(target, lines)
     for c in cands:
         cache_path = c["dir"] / "catalog-cache.json"
         cache = json.load(open(cache_path)) if cache_path.exists() else {}
         key = stamp(c["wav"]) + "|" + opt["--train"] + "|" + opt["--hold"]
-        if cache.get("key") != key:
+        if not measure and cache.get("key") != key:
+            cache = {"scores": {}, "judges": {}}
+        elif cache.get("key") != key:
             if judge is None:
                 from judge import Judge
 
@@ -119,6 +148,8 @@ def main():
             "label": c["label"],
             "about": c["about"],
             "wav": str(c["wav"].relative_to(d)),
+            "audio": str(mp3(c["wav"]).relative_to(d)),
+            "gain": round(ref / sung_rms(str(c["wav"]), lines), 4),
             "tele": str(c["tele"].relative_to(d)),
             "body": c["body"],
             "voice": c.get("voice"),
@@ -126,9 +157,11 @@ def main():
             "scores": cache["scores"],
             "judges": cache["judges"],
         })
-    cat = {"title": d.parent.name + " / " + d.name, "target": "target.wav", "lines": lines, "candidates": out}
+    cat = {"title": opt["--title"] or d.parent.name.replace("-", " ").capitalize(), "target": "target.wav", "lines": lines, "candidates": out}
     if (d / "accompaniment.wav").exists():
         cat["accompaniment"] = "accompaniment.wav"
+        cat["band"] = str(mp3(d / "accompaniment.wav").relative_to(d))
+        cat["duration"] = round(track["duration"], 3)
         cat["strums"] = strums(d / "accompaniment.wav")
     json.dump(cat, open(d / "candidates.json", "w"), indent=1)
     print(f"{d / 'candidates.json'}: {len(out)} candidates, {len(lines)} lines")

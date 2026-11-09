@@ -13,7 +13,7 @@ import path from "node:path";
  */
 function voicefit(): Plugin {
   const root = () => path.resolve(process.env.VOICEFIT_DIR ?? "out/voicefit");
-  const TYPES: Record<string, string> = { ".wav": "audio/wav", ".json": "application/json", ".tele": "application/octet-stream" };
+  const TYPES: Record<string, string> = { ".wav": "audio/wav", ".mp3": "audio/mpeg", ".json": "application/json", ".tele": "application/octet-stream" };
   return {
     name: "voicefit",
     apply: "serve",
@@ -56,7 +56,15 @@ function voicefit(): Plugin {
           res.statusCode = 404;
           return res.end();
         }
-        if (!real.startsWith(dir + path.sep)) {
+        // a set may be a link to a folder elsewhere: the file must be inside that set's folder
+        let setDir: string;
+        try {
+          setDir = fs.realpathSync(path.join(dir, rel.split("/")[0]));
+        } catch {
+          res.statusCode = 404;
+          return res.end();
+        }
+        if (!real.startsWith((rel.includes("/") ? setDir : dir) + path.sep)) {
           res.statusCode = 403;
           return res.end();
         }
