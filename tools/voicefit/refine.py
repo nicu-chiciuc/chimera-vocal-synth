@@ -1,6 +1,9 @@
 """Repair the aligner's vowel-to-vowel boundaries in a track, from the singer's formants:
 
-  refine.py <dir> [--dry] [--onsets-only]
+  refine.py <dir> [--dry] [--onsets-only | --short-vowels | --apply-audit <report.json>]
+
+--short-vowels proposes repairs and audits every vowel without changing the track. After
+checking a render, mark passing repairs accepted=true and use --apply-audit to apply them.
 
 The Montreal Forced Aligner is trained on speech. In singing it often puts the boundary between
 two vowels in the wrong place when nothing but a light consonant separates them: in Hurt it gave
@@ -93,17 +96,134 @@ def save_track(d, track, dry, changes):
         json.dump(track, open(d / "track.json", "w"))
 
 
+def recover_short_vowels(track, cost):
+    """Redistribute time inside words only when the reference supports the missing vowel.
+
+    Unlike the phrase-level pass, this handles consonant clusters between syllables while
+    preserving their durations and the word's boundaries. Single vowels can recover time from an
+    adjacent overlong consonant, provided the extra frames remain voiced and vowel-like.
+    """
+    changes = []
+    for line, phrase in enumerate(track["phrases"]):
+        for word_index, word in enumerate(phrase["words"]):
+            phones = word["phones"]
+            before = [p[:] for p in phones]
+            vowels = [i for i, p in enumerate(phones) if is_vowel(p[0])]
+            for _ in range(3):
+                moved = False
+                for left, right in zip(vowels, vowels[1:]):
+                    a, b = phones[left], phones[right]
+                    if min(a[2] - a[1], b[2] - b[1]) > 0.080001:
+                        continue
+                    cluster = phones[left + 1:right]
+                    if any(abs(x[2] - y[1]) > 0.02 for x, y in zip(phones[left:right], phones[left + 1:right + 1])):
+                        continue
+                    lengths = [p[2] - p[1] for p in cluster]
+                    consonants = sum(lengths)
+                    old1, n1 = cost(a[0], round(a[1] / STEP), round(a[2] / STEP))
+                    old2, n2 = cost(b[0], round(b[1] / STEP), round(b[2] / STEP))
+                    if n1 + n2 < 6:
+                        continue
+                    old = (old1 + old2) / (n1 + n2)
+                    best = None
+                    for boundary in np.arange(a[1] + 0.08, b[2] - consonants - 0.079, STEP):
+                        c1, k1 = cost(a[0], round(a[1] / STEP), round(boundary / STEP))
+                        c2, k2 = cost(b[0], round((boundary + consonants) / STEP), round(b[2] / STEP))
+                        if min(k1, k2) < 4 or k1 + k2 < 0.8 * (n1 + n2):
+                            continue
+                        score = (c1 + c2) / (k1 + k2)
+                        if best is None or score < best[0]:
+                            best = score, float(boundary)
+                    if best is None or best[0] >= 0.85 * old or abs(best[1] - a[2]) < 0.04:
+                        continue
+                    a[2] = round(best[1], 3)
+                    t = a[2]
+                    for p, length in zip(cluster, lengths):
+                        p[1], p[2] = round(t, 3), round(t + length, 3)
+                        t += length
+                    b[1] = round(t, 3)
+                    moved = True
+                if not moved:
+                    break
+            if len(vowels) == 1:
+                i = vowels[0]
+                vowel = phones[i]
+                a, b = vowel[1:]
+                if b - a <= 0.080001:
+                    prev = phones[i - 1] if i else None
+                    nxt = phones[i + 1] if i + 1 < len(phones) else None
+                    lo = prev[1] + 0.06 if prev and a - prev[1] > 0.15 else a
+                    hi = nxt[2] - 0.06 if nxt and nxt[2] - b > 0.15 else b
+                    old, count = cost(vowel[0], round(a / STEP), round(b / STEP))
+                    best = None
+                    if count >= 2:
+                        for start in np.arange(lo, a + 0.001, STEP):
+                            for end in np.arange(b, hi + 0.001, STEP):
+                                if end - start < max(0.10, b - a + 0.06):
+                                    continue
+                                total, n = cost(vowel[0], round(start / STEP), round(end / STEP))
+                                extra, gained = total - old, n - count
+                                if gained < 6 or n * STEP < 0.7 * (end - start) or extra / gained > old / count * 1.15:
+                                    continue
+                                if best is None or end - start > best[0]:
+                                    best = end - start, round(float(start), 3), round(float(end), 3)
+                    if best:
+                        vowel[1], vowel[2] = best[1:]
+                        if prev:
+                            prev[2] = vowel[1]
+                        if nxt:
+                            nxt[1] = vowel[2]
+            if phones != before:
+                changes.append({"line": line, "word_index": word_index, "word": word["w"],
+                                "accepted": False, "before": before, "after": [p[:] for p in phones]})
+    return changes
+
+
+def apply_vowel_audit(track, report):
+    pending = []
+    for repair in report["repairs"]:
+        if not repair.get("accepted"):
+            continue
+        word = track["phrases"][repair["line"]]["words"][repair["word_index"]]
+        before, after = repair["before"], repair["after"]
+        if word["phones"] == after:
+            continue
+        if word["w"] != repair["word"] or word["phones"] != before:
+            raise ValueError(f"stale vowel audit for line {repair['line']} word {repair['word']}")
+        if before[0][1] != after[0][1] or before[-1][2] != after[-1][2] or any(b <= a for _,a,b in after):
+            raise ValueError("vowel repair must preserve word boundaries and positive phone durations")
+        pending.append((word, after))
+    for word, after in pending:
+        word["phones"] = [p[:] for p in after]
+    return len(pending)
+
+
+def vowel_audit(track):
+    return [{"line": i, "word_index": wi, "phone_index": pi, "word": w["w"], "phone": p, "start": a, "end": b,
+             "duration_ms": round(1000 * (b - a)), "short": b - a <= 0.080001,
+             "word_duration_ms": round(1000 * (w["phones"][-1][2] - w["phones"][0][1]))}
+            for i, ph in enumerate(track["phrases"]) for wi, w in enumerate(ph["words"])
+            for pi, (p, a, b) in enumerate(w["phones"]) if is_vowel(p)]
+
+
 def main():
     d = pathlib.Path(sys.argv[1])
     dry = "--dry" in sys.argv
     track = json.load(open(d / "track.json"))
+    if "--apply-audit" in sys.argv:
+        path = sys.argv[sys.argv.index("--apply-audit") + 1]
+        changes = apply_vowel_audit(track, json.load(open(path)))
+        save_track(d, track, dry, changes)
+        print(f"{changes} accepted word repairs applied")
+        return
+    initial_audit = vowel_audit(track) if "--short-vowels" in sys.argv else None
     y, sr = librosa.load(d / "target.wav", sr=16000)
     hz = np.array(track["f0"]["hz"])
     hop = track["f0"]["hop"]
     n = int(len(y) / sr / STEP)
     pitch_voiced = np.array([hz[min(len(hz) - 1, int(i * STEP / hop))] > 0 for i in range(n)])
     rms = librosa.feature.rms(y=y, frame_length=400, hop_length=int(sr * STEP))[0][:n]
-    changes = recover_vowel_onsets(track, 20 * np.log10(rms + 1e-9), pitch_voiced)
+    changes = 0 if "--short-vowels" in sys.argv else recover_vowel_onsets(track, 20 * np.log10(rms + 1e-9), pitch_voiced)
     if "--onsets-only" in sys.argv:
         save_track(d, track, dry, changes)
         print(f"{changes} vowel onsets recovered")
@@ -136,6 +256,20 @@ def main():
         lf = np.log(F[idx])
         best = np.min([np.abs(lf - np.log(t)).sum(1) for t in targets[base(v)]], 0)
         return float(best.sum()), len(idx)
+
+    if "--short-vowels" in sys.argv:
+        before = initial_audit
+        repairs = recover_short_vowels(track, cost)
+        after = vowel_audit(track)
+        remaining = [r for r in after if r["short"]]
+        report = {"before": before, "after": after, "repairs": repairs, "remaining_short": remaining,
+                  "onsets_recovered": changes}
+        report_path = d / ("vowel-audit-dry.json" if dry else "vowel-audit.json")
+        json.dump(report, open(report_path, "w"), indent=1)
+        for r in repairs:
+            print(f"line {r['line']:2d} {r['word']}: " + " ".join(f"{p}={1000*(b-a):.0f}ms" for p,a,b in r['after']))
+        print(f"{len(before)} vowels audited; {len(repairs)} word repairs proposed; {len(remaining)} short vowels remain flagged in the proposal; report {report_path}")
+        return
 
     for ph in track["phrases"]:
         flat = [x for w in ph["words"] for x in w["phones"]]

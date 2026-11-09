@@ -1448,3 +1448,26 @@ No batch uses it yet: whether it decides the next batch, and Whisper guards, is 
 - Three Python regressions cover the clipped vowel, phrase and pause boundaries, weak
   pitched leakage, consonant onsets, and idempotence. `bun run test` and typecheck pass.
   Reference data and rendered voices remain outside git.
+
+## Whole-song short-vowel audit (2026-11-09)
+
+- Audited all 240 vowels in Country Roads, including unstressed vowels and every phrase.
+  Thirty-seven were 80 ms or shorter. Shortness is a review flag, not proof of an error.
+- The existing refinement could only compare vowels separated by one light consonant. It
+  missed compressed syllables across /nt/ and /v/, and vowels squeezed by overlong consonants.
+  `refine.py --short-vowels` now proposes within-word repairs using the reference formants and
+  voiced-frame coverage. It preserves word boundaries. The audit records every original and
+  proposed vowel duration, and all remaining short vowels.
+- Ten words had reference-supported proposals: four instances of "mountain", two of "in",
+  and "driving", "should", "been", and "home". The trial lowered Whisper word error from
+  58% to 44% on eight affected lines, but worsened the individual "driving" line. That repair
+  was rejected. The approved nine-word render scored 38%, with similarity 0.3869 to 0.3984.
+  Median whole-song envelope correlation stayed 0.6295; no word start or end moved.
+- The new audit mode writes proposals without modifying the track. `--apply-audit` applies
+  only entries marked accepted, rejects stale input, and is safe to retry. Seven Python
+  regressions cover clusters, consonant donors, brief words, weak evidence, rejected proposals,
+  stale reports, and idempotence. `bun run test` and typecheck pass.
+- The nine repairs are on all six local voices, with matching animation. Thirty short-vowel
+  flags remain, including brief whole words and unresolved "river", "memories", "driving",
+  and one "mama". Neither this audit nor the clarity score establishes that those are correct.
+  Reference data, the full audit, validation, and audio stay outside git.
