@@ -32,6 +32,8 @@ export interface PropGroup {
   color: string;
   width: number;
   alpha: number;
+  /** stands on the floor: it does not lean with the upper body when the head moves */
+  still?: boolean;
 }
 
 /** the player this frame */
@@ -303,10 +305,21 @@ function reaching(K: V3, T: V3, bones: readonly [number, number, number], bend: 
 /** the stage's measures below the face (cm, before the body's scale) */
 const FLOOR = 160;
 
-function performer(head: HeadSections, k: number, face: V3): { scene: PropGroup[]; frame: Props["frame"] } {
+/** the base of the neck, where the torso hangs from (body cm): its height and the x of its centre */
+function neckBase(head: HeadSections, k: number): { yn: number; cx: number } {
   const yn = head.y0 + 1.0 * k;
   const ns = head.at(yn) ?? { F: 3 * k, Bk: -4 * k, W: 5.3 * k };
-  const cx = (ns.F + ns.Bk) / 2 - 0.5 * k;
+  return { yn, cx: (ns.F + ns.Bk) / 2 - 0.5 * k };
+}
+
+/** the hips (body cm): the upper body leans about this point when the head moves */
+export function hipPivot(head: HeadSections, k: number): V3 {
+  const { yn, cx } = neckBase(head, k);
+  return [cx + 0.5 * k, yn - 57 * k, 0];
+}
+
+function performer(head: HeadSections, k: number, face: V3): { scene: PropGroup[]; frame: Props["frame"] } {
+  const { yn, cx } = neckBase(head, k);
   /** the floor */
   const yF = face[1] - FLOOR * k;
   /** a point from the base of the neck (cm) */
@@ -658,7 +671,7 @@ function performer(head: HeadSections, k: number, face: V3): { scene: PropGroup[
     const guitarLines = shift(g.lines);
     return [
       { lines: shear(torso.lines), color: V.blueMid, width: 0.85, alpha: 0.55 },
-      { lines: [...shear(legs.lines), ...foot.lines], color: V.blueMid, width: 0.85, alpha: 0.5 },
+      { lines: [...shear(legs.lines), ...foot.lines], color: V.blueMid, width: 0.85, alpha: 0.5, still: true },
       { lines: arms.lines, color: V.blueMid, width: 0.85, alpha: 0.6 },
       { lines: [...toBody(handR.lines), ...toBody(handL.lines)], color: V.blue, width: 0.85, alpha: 0.7 },
       { lines: toBody(pick.lines), color: V.amber, width: 1.05, alpha: 0.95 },

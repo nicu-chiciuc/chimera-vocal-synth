@@ -27,7 +27,7 @@ import { Beams, Poly } from "./beams3d.ts";
 import { bodyPoint, buildProfile, Gaze, jawAngle, wallX } from "./profile.ts";
 import { faceHandles, type FaceView, type ViewFlags } from "./anatomy.ts";
 import { Expression } from "./expression.ts";
-import { buildProps, type Pose, type Props } from "./props3d.ts";
+import { buildProps, hipPivot, type Pose, type Props } from "./props3d.ts";
 
 type Table = readonly (readonly [number, number])[];
 type V3 = [number, number, number];
@@ -634,6 +634,8 @@ const ECHO_AGES = [0.09, 0.06, 0.03];
 const ONE = new THREE.Vector3(1, 1, 1);
 /** where a stage puts the face, whatever the body (scene cm): the camera's fixed orbit centre */
 const STAGE_FACE = new THREE.Vector3(2.8, 12.0, 0);
+/** how much of the head's turn the upper body follows on a stage (about the hips) */
+const LEAN = 0.3;
 /** a body's face point (nose height, a little inside the face), in its own cm */
 const stageFace = (rest: Rest, k: number) => new THREE.Vector3(rest.center.x + 2.5 * k, rest.head.y1 - 11 * k, 0);
 
@@ -658,6 +660,15 @@ export class Anatomy3D {
   pose: Pose = { strum: 1, fret: 0.3, tap: 0, pluck: Infinity };
   private props: { model: VoiceModel; p: Props } | null = null;
   private readonly unturn = new THREE.Matrix4();
+  private readonly unlean = new THREE.Matrix4();
+  /** the head's nod alone (H), and the body's lean (L); headM is L·H on a stage */
+  private readonly nodM = new THREE.Matrix4();
+  private readonly leanM = new THREE.Matrix4();
+  private readonly lean = new THREE.Quaternion();
+  private readonly hipV = new THREE.Vector3();
+  private readonly posM = new THREE.Vector3();
+  private readonly quatM = new THREE.Quaternion();
+  private readonly scaleM = new THREE.Vector3();
   /** the head's nod this frame (about its pivot, in the body's own cm) */
   private readonly headM = new THREE.Matrix4();
   private clock = 0;
@@ -930,9 +941,13 @@ export class Anatomy3D {
     }
     const B = this.beams;
     for (const g of this.props.p.hat) for (const l of g.lines) B.line(l, l.length / 3, g.color, g.width, { alpha: g.alpha });
-    // undo only the nod (H), not the stage's scaling: the body stays still and at the head's size
-    const e = this.unturn.copy(this.headM).invert().elements;
+    // the group carries the body's lean and the head's nod on top of it (headPose). The upper
+    // body undoes only the nod, so it leans with the head; the stage, the microphone and the legs
+    // undo both and stand still. Not the stage's scaling: the body stays at the head's size
+    const upper = this.unturn.copy(this.nodM).invert().elements;
+    const still = this.unlean.copy(this.headM).invert().elements;
     for (const g of [...this.props.p.scene, ...this.props.p.frame(this.pose, dt)]) {
+      const e = g.still || this.props.p.scene.includes(g) ? still : upper;
       for (const l of g.lines) {
         const P = this.tmp.reset();
         for (let i = 0; i < l.length; i += 3) {
@@ -950,17 +965,29 @@ export class Anatomy3D {
     this.turn.setFromEuler(this.euler.set(this.face.tilt, 0, this.face.nod));
     // the head's nod about the pivot: H = [turn | pivot − turn·pivot]
     const p = pivot.clone().sub(pivot.clone().applyQuaternion(this.turn));
-    this.headM.compose(p, this.turn, ONE);
-    g.quaternion.copy(this.turn);
+    this.nodM.compose(p, this.turn, ONE);
+    this.headM.copy(this.nodM);
+    if (this.stage) {
+      // on a stage the neck is not a hinge on a statue: the upper body leans a fraction of the
+      // head's turn about the hips, and the head nods on top of that. M = L·H
+      const hips = hipPivot(rest.head, k);
+      this.lean.setFromEuler(this.euler.set(LEAN * this.face.tilt, 0, LEAN * this.face.nod));
+      const hp = this.hipV.set(hips[0], hips[1], hips[2]);
+      const lp = hp.clone().sub(hp.clone().applyQuaternion(this.lean));
+      this.leanM.compose(lp, this.lean, ONE);
+      this.headM.multiplyMatrices(this.leanM, this.nodM);
+    }
+    this.headM.decompose(this.posM, this.quatM, this.scaleM);
+    g.quaternion.copy(this.quatM);
     if (this.stage) {
       // every body at one size with its face on one point (STAGE_FACE): the camera never moves
-      // when the voice (and its build) changes, only the proportions do. G = T(F0)·S(1/k)·T(−F)·H
+      // when the voice (and its build) changes, only the proportions do. G = T(F0)·S(1/k)·T(−F)·M
       const s = 1 / k, F = stageFace(rest, k);
       g.scale.setScalar(s);
-      g.position.copy(p).sub(F).multiplyScalar(s).add(STAGE_FACE);
+      g.position.copy(this.posM).sub(F).multiplyScalar(s).add(STAGE_FACE);
     } else {
       g.scale.setScalar(1);
-      g.position.copy(p);
+      g.position.copy(this.posM);
     }
     g.updateMatrixWorld(true);
     this.eye.copy(this.camera.position);
