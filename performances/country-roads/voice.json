@@ -1,0 +1,31 @@
+{
+ "body": {
+  "female": 0,
+  "child": 0,
+  "size": 1.0,
+  "pharynx": 1.0
+ },
+ "source": {
+  "tension": 0.5,
+  "breathiness": 0.15,
+  "fry": 0.0,
+  "roughness": 0.1,
+  "brightness": 0.25,
+  "drift": 5.0,
+  "pressure": 8.0
+ },
+ "posture": {
+  "epilarynx": 0.0,
+  "ventricular": 0.0,
+  "velum": -0.15
+ },
+ "habits": {
+  "offset": {
+   "larynx": 0.0,
+   "jaw": 0.0,
+   "lipProt": 0.0,
+   "root": 0.0
+  },
+  "reduce": 0.0
+ }
+}

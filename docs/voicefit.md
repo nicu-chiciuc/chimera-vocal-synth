@@ -5,9 +5,10 @@ curve, then generates new audio with CHIMERA's physical voice model. The default
 does not require a fitted profile or a reference recording to speak or sing your own score.
 
 The browser app, CLI, stage renderer, alignment tools, fitting tools, and timing repairs are
-in git. Reference recordings, separated backing tracks, cover-song scores, fitted artist
-profiles, generated covers, and local comparison sets are excluded. A fresh clone therefore
-does not include the Country Roads, Hurt, or Born to Run listening sessions.
+in git. Selected [vocal performances](../performances/README.md) include generated stems,
+self-contained scores, voice settings, and animation for Hurt and Country Roads. Reference
+recordings, separated backing tracks, full local comparison sessions, and the local profile
+library remain excluded. Born to Run is not part of the exported sets.
 
 ## Hear the default male voice
 

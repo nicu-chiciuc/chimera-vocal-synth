@@ -1,0 +1,16 @@
+{
+ "title": "Take Me Home, Country Roads",
+ "candidate": "default",
+ "engine_revision": "9467a10af892e56f3a4cf4db70e27be46a7fa224",
+ "duration_seconds": 187.0,
+ "original_recording_included": false,
+ "backing_audio_included": false,
+ "sha256": {
+  "score.json": "c9ea5fb4f2c075c28a0a20f4cf6b3a533ed91a4bc07c9abedf2290a7f76e44b3",
+  "voice.json": "945fbf2cde59cda2aa49ef74d113b37fed9f714a7dd3b73d332332d393560da7",
+  "candidates.json": "370e7c11c58452aae1ca2d8a4f7ab15fc9747f394d6cf32f843eec9f5c5003d7",
+  "vocals.mp3": "16d131f3314ccc4aa0fe5722b13141482de958e54c9233f81d13be699f25d0da",
+  "animation.tele": "01d51fbacf032d7ade9783135a5ec1e32b787280df62e8aed0981339ae2c6bd7"
+ },
+ "wav_master": "vocals.wav is generated locally and included in the download bundle; regenerate it from score.json when cloning git"
+}

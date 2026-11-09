@@ -10,6 +10,10 @@ This fork's recorded-performance tools and stage are on
 They add reference-aligned singing, local voice comparisons, vowel-timing audits, and an animated
 performer. See [the recording workflow](docs/voicefit.md) for setup, rendering, and the current limits.
 
+[Exported vocal performances](performances/README.md) include Hurt and Country Roads without
+backing audio, plus self-contained scores and matching animation. They can be played locally
+or regenerated without the reference recordings.
+
 [Hear the default male voice without accompaniment](public/demos/male-voice.mp3).
 This short vowel exercise uses [its own note sequence](examples/male-voice.json), with no reference
 recording or fitted artist profile. To reproduce it:
