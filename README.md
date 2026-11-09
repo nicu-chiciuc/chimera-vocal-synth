@@ -5,6 +5,9 @@ airway (lungs, vocal folds or syrinx, a branched vocal tract, lips, nose), not f
 The engine is Rust, compiled to WebAssembly for an AudioWorklet; the same code runs natively
 for tests and the `chimera` CLI.
 
+Start with [what this fork contains](docs/fork-overview.md) for the folder map, the tools we use,
+and how recordings, scores, generated audio, and the animated player fit together.
+
 This fork's recorded-performance tools and stage are on
 [`t3/fit-target-voice`](https://github.com/nicu-chiciuc/chimera-vocal-synth/tree/t3/fit-target-voice).
 They add reference-aligned singing, local voice comparisons, vowel-timing audits, and an animated
@@ -64,6 +67,7 @@ bun tools/spectrogram.ts in.wav out.png
 
 ## Docs
 
+- [docs/fork-overview.md](docs/fork-overview.md): project overview and storage map.
 - [docs/architecture.md](docs/architecture.md): the acoustic model (FDTD airway, sources,
   anatomy, gestures).
 - [docs/rust-engine.md](docs/rust-engine.md): the engine's real-time and determinism contract,
