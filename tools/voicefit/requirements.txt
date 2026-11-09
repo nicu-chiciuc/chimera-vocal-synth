@@ -1,0 +1,17 @@
+# Direct versions from the working Python 3.12 Apple Silicon analysis environment.
+# Install MFA separately; it uses its own environment and pinned alignment models.
+numpy==2.5.4
+scipy==1.18.1
+librosa==1.0.0
+praat-parselmouth==0.4.7
+soundfile==0.14.0
+cma==4.5.0
+torch==2.7.1
+torchaudio==2.7.1
+speechbrain==1.0.3
+faster-whisper==1.2.1
+jiwer==4.0.0
+# Keep the working model-download and inference stack compatible with SpeechBrain 1.0.3.
+huggingface-hub==0.25.2
+ctranslate2==4.8.5
+tokenizers==0.23.3
