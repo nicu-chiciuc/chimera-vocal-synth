@@ -31,6 +31,8 @@ import parselmouth
 REPO = pathlib.Path(__file__).resolve().parents[2]
 STEP = 0.01
 LIGHT = {"HH", "W", "Y", "R", "L"}
+HELD = 0.5  # a vowel this long is a held note
+HELD_MARGIN = 0.15  # another vowel of the word has to fit the sustain's formants this much better
 # ARPAbet vowels as the engine's vowel table's IPA (a diphthong: its two parts)
 VOWELS = {
     "AA": ["ɑ"], "AE": ["æ"], "AH": ["ʌ", "ə"], "AO": ["ɔ"], "AW": ["a", "ʊ"], "AY": ["a", "ɪ"], "EH": ["ɛ"], "ER": ["ɝ"],
@@ -132,6 +134,52 @@ def main():
                     mid[1], mid[2] = round(new_b, 3), round(new_b + c, 3)
                 v2[1] = round(new_b + c, 3)
     print(f"{changes} boundaries moved")
+    # the held note of a word with several vowels: the sustain's formants say which vowel he
+    # sings it on. The aligner's rule (prepare.py hold) gives it to the last vowel, right for
+    # "Virgin-ia", "be-long" and "moun-tains"; but "mama" is held on an open ah, not the
+    # dictionary's schwa, and the long "country" of the outro on "coun-", not "-try"
+    held = 0
+    for ph in track["phrases"]:
+        for w in ph["words"]:
+            vs = [i for i, p in enumerate(w["phones"]) if is_vowel(p[0])]
+            if len(vs) < 2:
+                continue
+            h = max(vs, key=lambda i: w["phones"][i][2] - w["phones"][i][1])
+            hp = w["phones"][h]
+            if hp[2] - hp[1] < HELD:
+                continue
+            i0, i1 = int((hp[1] + 0.15) / STEP), int((hp[2] - 0.1) / STEP)
+            costs = {}
+            for i in vs:
+                c, k = cost(w["phones"][i][0], i0, i1)
+                if k >= 5:
+                    costs[i] = c / k
+            if h not in costs:
+                continue
+            b = min(costs, key=costs.get)
+            if b == h or costs[h] - costs[b] < HELD_MARGIN:
+                continue
+            if base(hp[0]) == "AH" and hp[0].endswith("0"):
+                # a schwa opens up when held: sing it as the vowel heard
+                print(f"{ph['text'][:28]:28s} {w['w']}: held {hp[0]} sung as {w['phones'][b][0]}")
+                hp[0] = w["phones"][b][0]
+            elif b < h:
+                # the note is held earlier in the word: the phones after that vowel pack at its end
+                tail = w["phones"][b + 1 :]
+                durs = [min(0.12, p[2] - p[1]) for p in tail]
+                t = hp[2] - sum(durs)
+                if t < w["phones"][b][1] + 0.1:
+                    continue
+                print(f"{ph['text'][:28]:28s} {w['w']}: the hold moves from {hp[0]} to {w['phones'][b][0]}")
+                w["phones"][b][2] = round(t, 3)
+                for p, dd in zip(tail, durs):
+                    p[1], p[2] = round(t, 3), round(t + dd, 3)
+                    t += dd
+            else:
+                continue
+            held += 1
+    print(f"{held} held vowels changed")
+    changes += held
     if not dry and changes:
         if not (d / "track-mfa.json").exists():
             shutil.copy(d / "track.json", d / "track-mfa.json")
