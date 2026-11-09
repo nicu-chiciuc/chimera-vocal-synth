@@ -1,4 +1,4 @@
-"""How well a rendition keeps time with the singer: sync.py <dir> <render.wav>
+"""How well a rendition keeps time with the singer: sync.py <dir> <render.wav> [track.json]
 
 For each phrase of <dir>/track.json, the lag (10 ms steps, up to ±600 ms) at which the
 render's level envelope best matches the singer's (target.wav), and the correlation there.
@@ -36,17 +36,19 @@ def best_lag(x, y, max_lag=60):
     return best
 
 
-def main(d, render):
+def main(d, render, track_path=None):
     d = pathlib.Path(d)
     yt, et = envelope(d / "target.wav")
     _, es = envelope(render, len(yt))
     n = min(len(et), len(es))
     et, es = et[:n], es[:n]
-    track = json.load(open(d / "track.json"))
+    track = json.load(open(track_path or d / "track.json"))
     rows = []
     for i, p in enumerate(track["phrases"]):
-        a = p["words"][0]["phones"][0][1]
-        b = p["words"][-1]["phones"][-1][2]
+        ph = [x for w in p["words"] for x in w["phones"]]
+        if not ph:
+            continue
+        a, b = ph[0][1], ph[-1][2]
         fa, fb = max(0, int(a * SR / HOP) - 50), int(b * SR / HOP) + 50
         lag, c = best_lag(et[fa:fb], es[fa:fb])
         rows.append((lag * 10, c))
@@ -55,4 +57,4 @@ def main(d, render):
 
 
 if __name__ == "__main__":
-    main(sys.argv[1], sys.argv[2])
+    main(sys.argv[1], sys.argv[2], *sys.argv[3:4])

@@ -95,6 +95,8 @@ def collect(out, floor=55.0, ceiling=320.0):
             phones = [e for e in tiers["phones"]["entries"] if e[2] not in ("", "sil", "sp", "spn")]
             for a, b, w in words:
                 ps = [[p, round(u["t0"] + pa, 3), round(u["t0"] + pb, 3)] for pa, pb, p in phones if pa >= a - 1e-6 and pb <= b + 1e-6]
+                if not ps:  # MFA knew the word but not its sounds (spn)
+                    ps = spread(w, u["t0"] + a, u["t0"] + b)
                 if "off" in u:
                     ps = hold(ps, u["on"], u["off"])
                 ws.append({"w": w, "phones": ps})

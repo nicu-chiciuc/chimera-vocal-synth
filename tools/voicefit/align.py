@@ -41,7 +41,15 @@ PAD_BEFORE = 0.10  # margin around each word's audio for MFA (CTC onsets run a l
 PAD_AFTER = 0.05
 MIN_UTT = 0.25  # MFA gets at least this much audio per word
 
-norm = lambda w: re.sub(r"[^A-Z']", "", w.upper().replace("’", "'").replace("‘", "'"))  # noqa: E731
+NUMBERS = dict(zip("0123456789", "zero one two three four five six seven eight nine".split()))
+
+
+def spell(w):
+    """A word as the aligners can read it: digits spelled out ("highway 9")."""
+    return "".join(NUMBERS.get(c, c) for c in w) if any(c.isdigit() for c in w) else w
+
+
+norm = lambda w: re.sub(r"[^A-Z']", "", spell(w).upper().replace("’", "'").replace("‘", "'"))  # noqa: E731
 
 
 def ctc_word_onsets(y, words):
@@ -76,7 +84,7 @@ def main(d):
     d = pathlib.Path(d)
     meta = json.load(open(d / "lines.json"))
     y, _ = librosa.load(d / "target.wav", sr=SR, mono=True)
-    words = [(k, w) for k, line in enumerate(meta["lines"]) for w in line["text"].split()]
+    words = [(k, spell(w)) for k, line in enumerate(meta["lines"]) for w in line["text"].split() if norm(w)]
     spans = ctc_word_onsets(y, [w for _, w in words])
     onsets = [a for a, _ in spans]
 
