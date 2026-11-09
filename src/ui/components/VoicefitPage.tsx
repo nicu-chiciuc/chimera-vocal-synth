@@ -98,6 +98,21 @@ function strumAt(on: number[], t: number): number {
   return -to + 2 * to * u * u * (3 - 2 * u);
 }
 
+/** the beats the foot keeps: the band's onsets, no closer than 0.4 s apart */
+function tapsOf(on: number[]): number[] {
+  const out: number[] = [];
+  for (const t of on) if (!out.length || t - out[out.length - 1] >= 0.4) out.push(t);
+  return out;
+}
+
+/** the right toe at t: up before each beat, down on it (0..1) */
+function tapAt(taps: number[], t: number): number {
+  const k = lastAtOrBefore(taps, t) + 1;
+  if (k >= taps.length) return 0;
+  const left = taps[k] - t;
+  return left < 0.3 ? Math.sin(Math.PI * (1 - left / 0.3)) : 0;
+}
+
 /** "Round 2: + articulation habits" → "Round 2" */
 const shortLabel = (c: Candidate) => c.label.split(":")[0];
 const clock = (t: number) => `${Math.floor(t / 60)}:${String(Math.floor(t % 60)).padStart(2, "0")}`;
@@ -345,7 +360,8 @@ export function VoicefitPage() {
     if (!c || !track) return null;
     const model = getModel(c.body ?? track.body, track.sampleRate);
     let last = VoiceModel.articFromArray(track.message(0).t.artic);
-    const strums = cat?.strums ?? [];
+    const strums = music ? (cat?.strums ?? []) : [];
+    const taps = tapsOf(strums);
     // the left hand climbs the neck with the sung pitch (eased, held through unvoiced sounds)
     let fret = 0.3;
     return {
@@ -354,11 +370,15 @@ export function VoicefitPage() {
       stage: true,
       frame: () => {
         const t = now();
-        if (t === null) return { tele: null, artic: last, epoch: epoch.current, pose: { strum: 1, fret } };
+        if (t === null) return { tele: null, artic: last, epoch: epoch.current, pose: { strum: 1, fret, tap: 0, pluck: Infinity } };
         const msg = track.message(track.indexAt(t));
         last = VoiceModel.articFromArray(msg.t.artic);
         if (msg.t.f0 > 40 && msg.t.voicing > 0.3) fret += (Math.min(1, Math.max(0, Math.log2(msg.t.f0 / 85) / 1.1)) - fret) * 0.08;
-        return { tele: msg, artic: last, epoch: epoch.current, pose: { strum: strums.length && music ? strumAt(strums, t) : 1, fret } };
+        // the right hand strums on the band's onsets, the strings ring from the last one, the
+        // toe keeps the beat
+        const k = lastAtOrBefore(strums, t);
+        const pose = { strum: strums.length ? strumAt(strums, t) : 1, fret, tap: tapAt(taps, t), pluck: k < 0 ? Infinity : t - strums[k] };
+        return { tele: msg, artic: last, epoch: epoch.current, pose };
       },
     };
   }, [performer, byId, teles, now, cat, music]);

@@ -2924,6 +2924,16 @@ input[type="range"]::-moz-range-thumb {
   background: #000;
 }
 
+/* on a narrow screen the main screens turn .anatomy into a square in the flow; the stage keeps
+   it filling its box, so a phone sees the whole performer */
+.vf-stage .anatomy {
+  position: absolute;
+  inset: 0;
+  width: auto;
+  height: auto;
+  aspect-ratio: auto;
+}
+
 /* the player: voices to switch between, the transport, the line being sung */
 .vf-player {
   display: flex;

@@ -27,7 +27,7 @@ import { Beams, Poly } from "./beams3d.ts";
 import { bodyPoint, buildProfile, Gaze, jawAngle, wallX } from "./profile.ts";
 import { faceHandles, type FaceView, type ViewFlags } from "./anatomy.ts";
 import { Expression } from "./expression.ts";
-import { buildProps, type Props } from "./props3d.ts";
+import { buildProps, type Pose, type Props } from "./props3d.ts";
 
 type Table = readonly (readonly [number, number])[];
 type V3 = [number, number, number];
@@ -651,11 +651,11 @@ export class Anatomy3D {
   /** which way the turned home view shows the face: 1 to the right, −1 to the left (a duet's
    *  second head, so the two sing towards each other) */
   facing: 1 | -1 = 1;
-  /** a performer on a stage: a hat on the head, a torso and a guitar below, framed to show them
-   *  (props3d.ts) */
+  /** a performer on a stage: a hat on the head, a whole body with a guitar below, a microphone
+   *  and a stage around it, framed to show them all (props3d.ts) */
   stage = false;
-  /** the player's hands this frame: `strum` −1..1 across the strings, `fret` 0..1 along the neck */
-  pose = { strum: 0, fret: 0.3 };
+  /** the player this frame: the hands on the guitar, the tapping foot, the struck strings */
+  pose: Pose = { strum: 1, fret: 0.3, tap: 0, pluck: Infinity };
   private props: { model: VoiceModel; p: Props } | null = null;
   private readonly unturn = new THREE.Matrix4();
   /** the head's nod this frame (about its pivot, in the body's own cm) */
@@ -708,8 +708,8 @@ export class Anatomy3D {
     this.compact = w < 560;
     this.camera.aspect = w / h;
     // on a wide screen the head sits left of centre, leaving the right for the readouts
-    // a stage: the face (the orbit's centre) sits in the upper part of the frame
-    if (this.stage) this.camera.setViewOffset(w, h, 0, 0.26 * h, w, h);
+    // a stage: the face (the orbit's centre) sits near the top of the frame, the body below it
+    if (this.stage) this.camera.setViewOffset(w, h, 0, 0.3 * h, w, h);
     else if (this.compact || this.centred) this.camera.clearViewOffset();
     else this.camera.setViewOffset(w, h, 0.1 * w, 0, w, h);
     this.camera.updateProjectionMatrix();
@@ -726,10 +726,10 @@ export class Anatomy3D {
     const target = r.center.clone();
     if (this.stage) {
       // orbit and zoom about the face (the nose's height, a little inside the face), and stand
-      // back far enough for hat to guitar: the view offset in resize() puts the face in the upper
-      // part of the frame, so the guitar shows below it
+      // back far enough for hat to floor: the view offset in resize() puts the face near the
+      // top of the frame, so the whole performer stands below it
       target.copy(STAGE_FACE);
-      d = 1.1 * Math.max(44 / half, 36 / (half * Math.max(0.3, this.camera.aspect)));
+      d = 1.04 * Math.max(110 / half, 58 / (half * Math.max(0.3, this.camera.aspect)));
     }
     // facing left: the same three-quarter view from the head's other side
     const az = this.facing > 0 ? 0.62 : Math.PI - 0.62, el = 0.2;
@@ -794,7 +794,8 @@ export class Anatomy3D {
     const dist = this.camera.position.distanceTo(this.stage ? STAGE_FACE : rest.center);
     const fog = this.scene.fog as THREE.Fog;
     fog.near = dist - 3 * k;
-    fog.far = dist + (this.stage ? 70 : 30) * k;
+    // a stage (drawn at one size, whatever the body) reaches back to the curtain
+    fog.far = dist + (this.stage ? 230 : 30 * k);
 
     B.begin();
     const flat = (pts: Vec[], z = 0): Float32Array => {
@@ -818,7 +819,7 @@ export class Anatomy3D {
 
     // ---- the fixed and jaw-carried structures
     for (const g of rest.fixed) for (const l of g.lines) B.line(l, l.length / 3, g.color, g.width, { alpha: g.alpha, hot: g.hot });
-    if (this.stage) this.drawProps(model, rest, k);
+    if (this.stage) this.drawProps(model, rest, k, dt);
     for (const g of rest.jaw) {
       for (const l of g.lines) {
         const P = this.tmp.reset();
@@ -920,15 +921,18 @@ export class Anatomy3D {
    * the vibrato) about the top of the neck. Everything is drawn in the head's frame, so this
    * turns the beams' group; the camera's position in that frame is kept for what faces it.
    */
-  /** the stage props: the hat in the head's frame (it nods with the head), the torso and guitar
-   *  with the head's turn undone (they stay still while it nods) */
-  private drawProps(model: VoiceModel, rest: Rest, k: number): void {
-    if (!this.props || this.props.model !== model) this.props = { model, p: buildProps(rest.head, k) };
+  /** the stage props: the hat in the head's frame (it nods with the head), the body, guitar,
+   *  microphone and stage with the head's turn undone (they stay still while it nods) */
+  private drawProps(model: VoiceModel, rest: Rest, k: number, dt: number): void {
+    if (!this.props || this.props.model !== model) {
+      const F = stageFace(rest, k);
+      this.props = { model, p: buildProps(rest.head, k, [F.x, F.y, F.z]) };
+    }
     const B = this.beams;
     for (const g of this.props.p.hat) for (const l of g.lines) B.line(l, l.length / 3, g.color, g.width, { alpha: g.alpha });
     // undo only the nod (H), not the stage's scaling: the body stays still and at the head's size
     const e = this.unturn.copy(this.headM).invert().elements;
-    for (const g of [...this.props.p.body, this.props.p.arms(this.pose.strum, this.pose.fret)]) {
+    for (const g of [...this.props.p.scene, ...this.props.p.frame(this.pose, dt)]) {
       for (const l of g.lines) {
         const P = this.tmp.reset();
         for (let i = 0; i < l.length; i += 3) {

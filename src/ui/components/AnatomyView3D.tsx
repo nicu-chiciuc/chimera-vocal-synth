@@ -9,6 +9,7 @@ import { useEffect, useRef, useState } from "react";
 import * as THREE from "three";
 import { OrbitControls } from "three/addons/controls/OrbitControls.js";
 import { Anatomy3D } from "../render/anatomy3d.ts";
+import type { Pose } from "../render/props3d.ts";
 import { Petting } from "../render/petting.ts";
 import { drawReadouts } from "../render/readouts.ts";
 import { Glow, label } from "../render/vector.ts";
@@ -31,7 +32,7 @@ import type { TelemetryMessage } from "../../worklet/protocol.ts";
 export interface HeadFeed {
   model: VoiceModel;
   view: ViewFlags;
-  frame(): { tele: TelemetryMessage | null; artic: HumanArtic; epoch: number; pose?: { strum: number; fret: number } };
+  frame(): { tele: TelemetryMessage | null; artic: HumanArtic; epoch: number; pose?: Pose };
   /** cap on the device pixel ratio (two heads on a phone draw half the pixels at 1.5) */
   maxDpr?: number;
   /** which way the head turns to show its face (see Anatomy3D.facing) */
@@ -88,7 +89,7 @@ export function AnatomyView3D(props: { slots?: SlotsFn; info?: InfoFn; showForma
     controls.zoomSpeed = 0.8;
     controls.screenSpacePanning = true;
     controls.minDistance = 20;
-    controls.maxDistance = r.stage ? 480 : 220;
+    controls.maxDistance = r.stage ? 900 : 220;
 
     // camera moves (the opening turn from the side view, double-click home): orbit round the target
     const tween = { on: false, t: 0, dur: 1, p0: new THREE.Vector3(), q0: new THREE.Vector3(), p1: new THREE.Vector3(), q1: new THREE.Vector3() };
