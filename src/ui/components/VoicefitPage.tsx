@@ -113,8 +113,13 @@ function tapAt(taps: number[], t: number): number {
   return left < 0.3 ? Math.sin(Math.PI * (1 - left / 0.3)) : 0;
 }
 
-/** "Round 2: + articulation habits" → "Round 2" */
-const shortLabel = (c: Candidate) => c.label.split(":")[0];
+const shortLabel = (c: Candidate): string => {
+  if (c.id === "default") return "Default voice";
+  if (c.id === "held-vowels") return "Default voice (vowel test)";
+  const fitted = /^(?:fitcash|fit)(\d*)(-before-small-fixes)?$/.exec(c.id);
+  if (fitted) return `Voice ${fitted[1] || 1}${fitted[2] ? " (before fixes)" : ""}`;
+  return c.label.split(":")[0];
+};
 const clock = (t: number) => `${Math.floor(t / 60)}:${String(Math.floor(t % 60)).padStart(2, "0")}`;
 
 export function VoicefitPage() {
