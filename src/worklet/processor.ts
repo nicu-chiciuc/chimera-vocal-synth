@@ -76,7 +76,11 @@ class ChimeraProcessor extends AudioWorkletProcessor {
   }
 
   private body(): BodyMix {
-    return { female: this.x.engine_body_female(this.h), child: this.x.engine_body_child(this.h) };
+    const b: BodyMix = { female: this.x.engine_body_female(this.h), child: this.x.engine_body_child(this.h) };
+    const size = this.x.engine_body_size(this.h), pharynx = this.x.engine_body_pharynx(this.h);
+    if (Number.isFinite(size)) b.size = size;
+    if (Number.isFinite(pharynx)) b.pharynx = pharynx;
+    return b;
   }
 
   private postReady(): void {
@@ -106,8 +110,11 @@ class ChimeraProcessor extends AudioWorkletProcessor {
     const x = this.x, h = this.h;
     switch (m.type) {
       case "body":
-        x.engine_set_body(h, m.body.female, m.body.child);
+        x.engine_set_body(h, m.body.female, m.body.child, m.body.size ?? NaN, m.body.pharynx ?? NaN);
         this.postReady();
+        break;
+      case "habits":
+        this.engineJson("engine_set_habits", m.habits as Record<string, unknown>);
         break;
       case "artic": {
         const v = this.values();

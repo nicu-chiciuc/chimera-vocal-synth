@@ -43,8 +43,10 @@ and the CLI) under a React UI. See the README.
 - **The wasm loads before the UI.** A module that calls the engine at import must not be reachable
   from `src/main.tsx`'s static imports. Check: `bun tools/e2e.ts` against `bun run preview`.
 - **DOM content flows in `.screen-body`, never absolutely positioned.** Check: `bun run lint:layout`.
-- **Nothing copyrighted goes in git.** `public/shows/` is gitignored; never ship CSD audio or
-  anything derived from it.
+- **Reference recordings and backing audio stay local.** `public/shows/` is gitignored; never
+  ship CSD audio or anything derived from it. The owner has chosen to publish selected generated
+  cover performances under `performances/`, including scores and animation. Keep those separate
+  from the original recordings; the software license does not clear rights in song compositions.
 - **Voice tuning follows `docs/hill-climb/README.md`** and never edits its judges.
 
 ## Checks

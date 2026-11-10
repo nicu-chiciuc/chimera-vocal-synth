@@ -1407,3 +1407,85 @@ No batch uses it yet: whether it decides the next batch, and Whisper guards, is 
   - **The male /ʃ/ centroid**, overshot by batch 2 (3.48 kHz, men 3.13).
   - **A diagnostic:** the voice lacks 1–4 kHz presence after batch 1 (female 1–2 kHz −16.1 dB re
     0–8 kHz, women −10.8). That is a spectral shape to fix, not a tilt.
+
+## Recorded-song vowel timing (2026-11-09, listening experiment)
+
+- Hypothesis: `render track` expands a held diphthong with speech's 55/45 timing. A long
+  "home" therefore spends nearly half its vowel on the closing sound. Sustaining the nucleus
+  and delaying the closing sound might improve the owner's reported pronunciation problem.
+- Change: an optional `sustain_vowels: true` track field splits diphthongs longer than 400 ms
+  before speech planning. The nucleus takes the sustain; the closing vowel takes 20% of the
+  duration, capped at 200 ms. Word boundaries and total duration remain fixed. Speech, the
+  normal singing planner, and tracks without the option keep their existing behavior.
+- Country Roads, training phrases 0–9, same untuned male voice: the original render had
+  speaker similarity 0.3046 and Whisper word error 29.55%. A first version that changed all
+  diphthongs and capped their closing vowel at 120 ms gave 0.2975 and 34.09%. The narrower
+  version gave 0.3076 and 38.64%. Held-out phrases were not used after the training failures.
+- Verdict: neither variant passed the clarity guard. The original audio remains the default.
+  The narrower variant is available locally as "Untuned male (held vowels test)" for the
+  owner to judge the sustained vowels by ear. This is an opt-in prototype, not an accepted
+  improvement. Audio, animation, render input, and measurements remain outside git.
+- Validation: three CLI regressions cover the long diphthong's timing, unchanged short vowels,
+  and unchanged default track behavior. `bun run test` and `bun run typecheck` pass. No
+  engine functions, calibrated tables, goldens, or judges changed.
+- Still open: this does not alter steady /i/ in "trees" or the aligner's long final nasals.
+  Those need separate evidence; this experiment does not establish their causes.
+
+## Clipped phrase-initial vowel (2026-11-09, alignment repair)
+
+- The owner reported that "all" at the start of the second verse was nearly inaudible.
+  The score gave its vowel 40 ms, starting at 55.636 s; the reference already had a voiced
+  onset at 55.420 s. The aligner's word cut and onset tolerance had discarded that audio.
+- `refine.py` now recovers clipped phrase-initial vowels from adjacent voiced reference
+  frames above the local energy floor. It looks back at most 350 ms, stops at a 30 ms break,
+  requires 60 ms of evidence, and cannot cross the previous phrase. It leaves the vowel's
+  end and every following phone fixed. `--onsets-only` applies just this repair.
+- Country Roads: exactly one onset changed. "All" now has 256 ms of vowel; "my memories"
+  and the rest of the score are unchanged. Reapplying the repair makes no further changes.
+- The untuned render's recovered onset window rose from -55.8 to -16.1 dBFS. Whisper now
+  hears the initial "All", although it still gets other words in that line wrong. Its
+  phrase word error fell from 83.33% to 66.67%; this does not establish a whole-song gain.
+- Three Python regressions cover the clipped vowel, phrase and pause boundaries, weak
+  pitched leakage, consonant onsets, and idempotence. `bun run test` and typecheck pass.
+  Reference data and rendered voices remain outside git.
+
+## Whole-song short-vowel audit (2026-11-09)
+
+- Audited all 240 vowels in Country Roads, including unstressed vowels and every phrase.
+  Thirty-seven were 80 ms or shorter. Shortness is a review flag, not proof of an error.
+- The existing refinement could only compare vowels separated by one light consonant. It
+  missed compressed syllables across /nt/ and /v/, and vowels squeezed by overlong consonants.
+  `refine.py --short-vowels` now proposes within-word repairs using the reference formants and
+  voiced-frame coverage. It preserves word boundaries. The audit records every original and
+  proposed vowel duration, and all remaining short vowels.
+- Ten words had reference-supported proposals: four instances of "mountain", two of "in",
+  and "driving", "should", "been", and "home". The trial lowered Whisper word error from
+  58% to 44% on eight affected lines, but worsened the individual "driving" line. That repair
+  was rejected. The approved nine-word render scored 38%, with similarity 0.3869 to 0.3984.
+  Median whole-song envelope correlation stayed 0.6295; no word start or end moved.
+- The new audit mode writes proposals without modifying the track. `--apply-audit` applies
+  only entries marked accepted, rejects stale input, and is safe to retry. Seven Python
+  regressions cover clusters, consonant donors, brief words, weak evidence, rejected proposals,
+  stale reports, and idempotence. `bun run test` and typecheck pass.
+- The nine repairs are on all six local voices, with matching animation. Thirty short-vowel
+  flags remain, including brief whole words and unresolved "river", "memories", "driving",
+  and one "mama". Neither this audit nor the clarity score establishes that those are correct.
+  Reference data, the full audit, validation, and audio stay outside git.
+
+## Hurt: four small vocal timing repairs (2026-11-10)
+
+- Audited all 210 vowels; no additional clipped phrase openings were supported. Four
+  within-word repairs passed the reference-formant check: "tears", "wear", "someone",
+  and "would". They recover vowels squeezed to 30–70 ms by long adjacent consonants.
+- Kept round 3's body, source, pitch, and pressure controls fixed. Only those four words'
+  internal phone boundaries move; no word starts or ends change.
+- On the four affected lines, Whisper word error went from 41.18% to 23.53%. "Wear" and
+  "would" are recognized after the repair; the other two lines do not regress. Median
+  whole-song envelope correlation stays 0.90, and lines below 0.6 fall from one to zero.
+- Speaker similarity on this small subset decreases from 0.1107 to 0.0842. This is a clarity
+  and timing repair, not evidence of improved singer identity. Pronunciation remains imperfect.
+- Re-render all local candidates from the corrected timing. Keep the previous round-3
+  audio and matching telemetry as a selectable local comparison. Refresh the shared round-3
+  score, audio, animation, and manifest together. Original reference and backing audio stay local.
+- `bun run test`, typecheck, and seven Python regressions pass. The repair algorithm and
+  engine code are unchanged.

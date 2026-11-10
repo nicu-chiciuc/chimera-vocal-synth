@@ -1,0 +1,16 @@
+{
+ "title": "Hurt",
+ "candidate": "fit3",
+ "engine_revision": "d0be7a6558243a0157d1adf4f26ad7eca4126890",
+ "duration_seconds": 228.345,
+ "original_recording_included": false,
+ "backing_audio_included": false,
+ "sha256": {
+  "score.json": "8265401fefcc6aea2630712121e6d0afa12991fd83618a06f85134d400042df0",
+  "voice.json": "58d46025dbf31d200a5892ae5f0cd325a433b7508df19b29dd97dce1fddc75be",
+  "candidates.json": "d3f6231db20f9dc20637ca55e7b0566d8605114605b005af445ca9e447643a85",
+  "vocals.mp3": "e7735a4700f843100c23c8bd28f12799df15b6c87fdd611d242ae9553074f328",
+  "animation.tele": "951071737350d0613aaeb99163c9cad8f6bfdfc29280094b57c11e1370ddd77a"
+ },
+ "wav_master": "vocals.wav is generated locally and included in the download bundle; regenerate it from score.json when cloning git"
+}

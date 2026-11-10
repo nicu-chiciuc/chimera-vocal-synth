@@ -267,16 +267,36 @@ pub unsafe extern "C" fn engine_set_gate(h: *mut Handle, level: f64) {
     handle!(h).engine.set_gate(level);
 }
 
-/// Switch body: `female` 0 (male) … 1 (female), `child` 0 (adult) … 1 (child); see `BodyMix`.
+/// Switch body: `female` 0 (male) … 1 (female), `child` 0 (adult) … 1 (child), and the speaker's
+/// build: `size` and `pharynx` multiply the blend's (NaN: 1); see `BodyMix`.
 /// Allocates. The new voice's node counts can be read with `engine_n_ph`/`engine_n_or`.
 ///
 /// # Safety
 /// `h` must be a live handle.
 #[unsafe(no_mangle)]
-pub unsafe extern "C" fn engine_set_body(h: *mut Handle, female: f64, child: f64) {
+pub unsafe extern "C" fn engine_set_body(h: *mut Handle, female: f64, child: f64, size: f64, pharynx: f64) {
     let h = handle!(h);
-    h.engine.set_body(BodyMix::new(female, child));
+    h.engine.set_body(BodyMix::new(female, child).with_build(Some(size), Some(pharynx)));
     h.engine.telemetry(&mut h.tele); // resize the telemetry buffers for the new voice
+}
+
+/// The speaker's articulatory habits (`Habits` as UTF-8 JSON at `ptr..ptr+len`:
+/// `{"offset": {"larynx": -0.4}, "reduce": 0.2}`; `{}` for none), for everything scheduled from
+/// now on. Returns 0, or 1 with `{error}` (the habits stay as they were).
+///
+/// # Safety
+/// `h` must be a live handle; `ptr..ptr+len` readable.
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn engine_set_habits(h: *mut Handle, ptr: *const u8, len: usize) -> u32 {
+    let h = handle!(h);
+    let bytes = unsafe { core::slice::from_raw_parts(ptr, len) };
+    match serde_json::from_slice::<chimera::voice::habits::Habits>(bytes) {
+        Ok(habits) => {
+            h.engine.set_habits(habits);
+            api::set_result(Ok(serde_json::json!({})))
+        }
+        Err(e) => api::set_result(Err(format!("bad habits: {e}"))),
+    }
 }
 
 /// # Safety
@@ -326,6 +346,24 @@ pub unsafe extern "C" fn engine_body_female(h: *mut Handle) -> f64 {
 #[unsafe(no_mangle)]
 pub unsafe extern "C" fn engine_body_child(h: *mut Handle) -> f64 {
     handle!(h).engine.info().body.child
+}
+
+/// The body's `size` (NaN: the blend's own).
+///
+/// # Safety
+/// `h` must be a live handle.
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn engine_body_size(h: *mut Handle) -> f64 {
+    handle!(h).engine.info().body.size.unwrap_or(f64::NAN)
+}
+
+/// The body's `pharynx` (NaN: the blend's own).
+///
+/// # Safety
+/// `h` must be a live handle.
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn engine_body_pharynx(h: *mut Handle) -> f64 {
+    handle!(h).engine.info().body.pharynx.unwrap_or(f64::NAN)
 }
 
 /// Evaluate one of the engine's math functions (diagnostics: native and wasm must agree bit for

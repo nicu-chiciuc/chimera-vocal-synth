@@ -5,6 +5,26 @@ airway (lungs, vocal folds or syrinx, a branched vocal tract, lips, nose), not f
 The engine is Rust, compiled to WebAssembly for an AudioWorklet; the same code runs natively
 for tests and the `chimera` CLI.
 
+Start with [what this fork contains](docs/fork-overview.md) for the folder map, the tools we use,
+and how recordings, scores, generated audio, and the animated player fit together.
+
+This fork's recorded-performance tools and stage are on
+[`t3/fit-target-voice`](https://github.com/nicu-chiciuc/chimera-vocal-synth/tree/t3/fit-target-voice).
+They add reference-aligned singing, local voice comparisons, vowel-timing audits, and an animated
+performer. See [the recording workflow](docs/voicefit.md) for setup, rendering, and the current limits.
+
+[Exported vocal performances](performances/README.md) include Hurt and Country Roads without
+backing audio, plus self-contained scores and matching animation. They can be played locally
+or regenerated without the reference recordings.
+
+[Hear the default male voice without accompaniment](public/demos/male-voice.mp3).
+This short vowel exercise uses [its own note sequence](examples/male-voice.json), with no reference
+recording or fitted artist profile. To reproduce it:
+
+```sh
+cargo run --release -p chimera-cli -- render notes examples/male-voice.json out/male-voice male
+```
+
 ## What it does
 
 - **Play**: drag the tongue, lips and jaw in a live cutaway of the head; vowel pad, encoders,
@@ -24,6 +44,9 @@ engine state: pressure in the airway, airflow, the vocal folds, spectra and form
 Needs Rust with the `wasm32-unknown-unknown` target, and Bun.
 
 ```sh
+git clone --branch t3/fit-target-voice https://github.com/nicu-chiciuc/chimera-vocal-synth.git
+cd chimera-vocal-synth
+rustup target add wasm32-unknown-unknown
 bun install
 bun run dev        # builds the wasm, then Vite on 127.0.0.1:5317
 bun run test       # wasm build, cargo test --workspace, bun test tests
@@ -44,6 +67,7 @@ bun tools/spectrogram.ts in.wav out.png
 
 ## Docs
 
+- [docs/fork-overview.md](docs/fork-overview.md): project overview and storage map.
 - [docs/architecture.md](docs/architecture.md): the acoustic model (FDTD airway, sources,
   anatomy, gestures).
 - [docs/rust-engine.md](docs/rust-engine.md): the engine's real-time and determinism contract,

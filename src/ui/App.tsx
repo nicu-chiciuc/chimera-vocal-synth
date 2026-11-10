@@ -21,11 +21,14 @@ import type { Mode } from "./store.ts";
 import type { BodyName } from "../worklet/protocol.ts";
 import { BodyPad } from "./components/BodyPad.tsx";
 import { bodyLabel, presetOf, PRESETS } from "./body.ts";
+import { VOICES, voiceById } from "../voices/index.ts";
 
 // three.js only loads when the 3D view is first shown
 const AnatomyView3D = lazy(() => import("./components/AnatomyView3D.tsx").then((m) => ({ default: m.AnatomyView3D })));
 // the duet page (`?show=<id>`): two 3D heads replaying a pre-rendered song
 const DuetPage = lazy(() => import("./components/DuetPage.tsx").then((m) => ({ default: m.DuetPage })));
+// the voice-fit comparison page (`?voicefit`, dev server only: tools/voicefit)
+const VoicefitPage = lazy(() => import("./components/VoicefitPage.tsx").then((m) => ({ default: m.VoicefitPage })));
 
 /** the show to play, from `?show=<id>` (a plain folder name under public/shows) */
 function showId(): string | null {
@@ -39,6 +42,8 @@ function TopBar() {
   const start = useStore((s) => s.start);
   const body = useStore((s) => s.body);
   const setBody = useStore((s) => s.setBody);
+  const voice = useStore((s) => s.voice);
+  const setVoice = useStore((s) => s.setVoice);
   const volume = useStore((s) => s.volume);
   const setVolume = useStore((s) => s.setVolume);
   const mode = useStore((s) => s.mode);
@@ -71,7 +76,10 @@ function TopBar() {
           <Segmented<BodyName>
             label="Body"
             value={presetOf(body)}
-            onChange={(b) => setBody(PRESETS[b])}
+            onChange={(b) => {
+              if (voice) setVoice(null);
+              setBody(PRESETS[b]);
+            }}
             options={[
               { value: "male", label: "Male" },
               { value: "female", label: "Female" },
@@ -80,6 +88,14 @@ function TopBar() {
           />
           <BodyPad />
         </div>
+      )}
+      {mode !== "bestiary" && VOICES.length > 0 && (
+        <Segmented<string>
+          label="Voice"
+          value={voice?.id ?? "none"}
+          onChange={(id) => setVoice(voiceById(id) ?? null)}
+          options={[{ value: "none", label: "Plain" }, ...VOICES.map((v) => ({ value: v.id, label: v.name }))]}
+        />
       )}
       <div className="topbar-right">
         <label className="volume">
@@ -215,6 +231,12 @@ function PlayRight() {
 }
 
 export function App() {
+  if (new URLSearchParams(window.location.search).has("voicefit"))
+    return (
+      <Suspense fallback={null}>
+        <VoicefitPage />
+      </Suspense>
+    );
   const show = showId();
   if (show)
     return (

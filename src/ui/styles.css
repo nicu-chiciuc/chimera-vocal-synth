@@ -2858,3 +2858,229 @@ input[type="range"]::-moz-range-thumb {
     padding: 7px 8px 0;
   }
 }
+
+/* ---------- the voice-fit playthrough (?voicefit): a song sung by each fitted voice, the 3D
+   performer above the player. A solid sans at reading sizes and bright, framed controls, not the
+   wall's thin single-stroke display face. */
+.vf {
+  --vf-text: #eef6f8;
+  --vf-dim: #a9c7d8;
+  --vf-edge: #4f7d99;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  gap: 14px;
+  padding: 16px;
+  max-width: 1200px;
+  margin: 0 auto;
+  min-height: 100vh;
+  align-content: start;
+  font-family: "Archivo", system-ui, -apple-system, "Segoe UI", sans-serif;
+  color: var(--vf-text);
+}
+
+.vf-head {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: 6px 16px;
+}
+
+.vf-title {
+  margin: 0;
+  font-size: 26px;
+  font-weight: 700;
+  letter-spacing: 0.02em;
+}
+
+.vf-sub {
+  font-size: 15px;
+  color: var(--vf-dim);
+}
+
+.vf-links {
+  margin-left: auto;
+  display: flex;
+  gap: 18px;
+  font-size: 15px;
+}
+
+.vf-links a {
+  color: var(--blue);
+  text-decoration: none;
+  border-bottom: 1px solid var(--blue-dim);
+}
+
+.vf-links a:hover {
+  color: #fff;
+  border-color: #fff;
+}
+
+/* the 3D view fills its box (.anatomy is absolutely placed) */
+.vf-stage {
+  position: relative;
+  height: min(66vh, 700px);
+  min-height: 320px;
+  border: 1px solid var(--vf-edge);
+  background: #000;
+}
+
+/* on a narrow screen the main screens turn .anatomy into a square in the flow; the stage keeps
+   it filling its box, so a phone sees the whole performer */
+.vf-stage .anatomy {
+  position: absolute;
+  inset: 0;
+  width: auto;
+  height: auto;
+  aspect-ratio: auto;
+}
+
+/* the player: voices to switch between, the transport, the line being sung */
+.vf-player {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  padding: 14px 16px;
+  border: 1px solid var(--vf-edge);
+  background: #05090c;
+}
+
+.vf-bar {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+.vf .chip.vf-playbtn {
+  min-width: 110px;
+  border-color: var(--blue);
+}
+
+.vf-time {
+  font-size: 16px;
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+  color: var(--vf-text);
+  min-width: 96px;
+  text-align: center;
+}
+
+.vf-bar input[type="range"] {
+  flex: 1 1 240px;
+  height: 32px;
+}
+
+.vf-bar input[type="range"]::-webkit-slider-runnable-track {
+  height: 8px;
+  border-radius: 4px;
+  background: linear-gradient(to right, var(--amber) 0, var(--amber) var(--pos, 0%), #24465e var(--pos, 0%));
+}
+
+.vf-bar input[type="range"]::-moz-range-track {
+  height: 8px;
+  border-radius: 4px;
+  background: #24465e;
+}
+
+.vf-bar input[type="range"]::-moz-range-progress {
+  height: 8px;
+  border-radius: 4px;
+  background: var(--amber);
+}
+
+.vf-bar input[type="range"]::-webkit-slider-thumb {
+  width: 22px;
+  height: 22px;
+  margin-top: -7px;
+  background: #fff;
+  box-shadow: 0 0 8px rgba(255, 179, 64, 0.7);
+}
+
+.vf-bar input[type="range"]::-moz-range-thumb {
+  width: 22px;
+  height: 22px;
+  background: #fff;
+}
+
+.vf-now {
+  margin: 0;
+  font-size: 20px;
+  font-weight: 600;
+  color: var(--green);
+  min-height: 1.3em;
+}
+
+.vf-opts {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 10px 22px;
+}
+
+.vf-check {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 16px;
+  font-weight: 600;
+  cursor: pointer;
+}
+
+.vf-check input {
+  width: 20px;
+  height: 20px;
+  accent-color: var(--blue);
+  cursor: pointer;
+}
+
+.vf-keys {
+  margin-left: auto;
+  font-size: 13px;
+  color: var(--vf-dim);
+}
+
+/* every button on the page: big, framed in a visible colour, lit when chosen or playing */
+.vf .chip {
+  font-family: inherit;
+  font-size: 15px;
+  font-weight: 600;
+  letter-spacing: 0.02em;
+  text-transform: none;
+  min-height: 40px;
+  min-width: 44px;
+  padding: 8px 14px;
+  color: var(--vf-text);
+  background: #0d1b26;
+  border: 2px solid var(--vf-edge);
+  border-radius: 6px;
+  text-shadow: none;
+  box-shadow: none;
+}
+
+.vf .chip:hover {
+  border-color: var(--blue);
+  background: #12283a;
+  color: #fff;
+}
+
+.vf .chip.on,
+.vf .chip[aria-pressed="true"] {
+  background: var(--blue);
+  border-color: var(--blue);
+  color: #00121e;
+  text-shadow: none;
+  box-shadow: 0 0 10px rgba(79, 182, 242, 0.5);
+}
+
+.vf-msg {
+  margin: 12px 16px 16px;
+  color: var(--vf-dim);
+  font-size: 15px;
+  line-height: 1.5;
+}
+
+.vf-plays {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}

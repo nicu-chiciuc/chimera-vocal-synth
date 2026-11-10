@@ -9,6 +9,7 @@ import { useEffect, useRef, useState } from "react";
 import * as THREE from "three";
 import { OrbitControls } from "three/addons/controls/OrbitControls.js";
 import { Anatomy3D } from "../render/anatomy3d.ts";
+import type { Pose } from "../render/props3d.ts";
 import { Petting } from "../render/petting.ts";
 import { drawReadouts } from "../render/readouts.ts";
 import { Glow, label } from "../render/vector.ts";
@@ -31,11 +32,13 @@ import type { TelemetryMessage } from "../../worklet/protocol.ts";
 export interface HeadFeed {
   model: VoiceModel;
   view: ViewFlags;
-  frame(): { tele: TelemetryMessage | null; artic: HumanArtic; epoch: number };
+  frame(): { tele: TelemetryMessage | null; artic: HumanArtic; epoch: number; pose?: Pose };
   /** cap on the device pixel ratio (two heads on a phone draw half the pixels at 1.5) */
   maxDpr?: number;
   /** which way the head turns to show its face (see Anatomy3D.facing) */
   facing?: 1 | -1;
+  /** a performer: hat, torso and guitar, framed to show them (see Anatomy3D.stage) */
+  stage?: boolean;
 }
 
 const ease = (t: number) => (t < 0.5 ? 4 * t * t * t : 1 - (-2 * t + 2) ** 3 / 2);
@@ -76,6 +79,7 @@ export function AnatomyView3D(props: { slots?: SlotsFn; info?: InfoFn; showForma
     const r = new Anatomy3D();
     r.centred = !readoutsRef.current;
     r.facing = feedRef.current?.facing ?? 1;
+    r.stage = feedRef.current?.stage ?? false;
     const glow = new Glow();
     const camera = r.camera;
     const controls = new OrbitControls(camera, canvas);
@@ -85,7 +89,7 @@ export function AnatomyView3D(props: { slots?: SlotsFn; info?: InfoFn; showForma
     controls.zoomSpeed = 0.8;
     controls.screenSpacePanning = true;
     controls.minDistance = 20;
-    controls.maxDistance = 220;
+    controls.maxDistance = r.stage ? 900 : 220;
 
     // camera moves (the opening turn from the side view, double-click home): orbit round the target
     const tween = { on: false, t: 0, dur: 1, p0: new THREE.Vector3(), q0: new THREE.Vector3(), p1: new THREE.Vector3(), q1: new THREE.Vector3() };
@@ -184,6 +188,7 @@ export function AnatomyView3D(props: { slots?: SlotsFn; info?: InfoFn; showForma
         }
         tele = fr.tele;
         a = tele ? VoiceModel.articFromArray(tele.t.artic) : fr.artic;
+        if (fr.pose) r.pose = fr.pose;
       } else {
         tele = engine.latest && sameBody(engine.latest.body, st.body) ? engine.latest : null;
         a = tele ? VoiceModel.articFromArray(tele.t.artic) : st.artic;

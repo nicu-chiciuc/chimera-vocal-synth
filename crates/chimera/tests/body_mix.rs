@@ -27,7 +27,37 @@ fn presets_are_exact_and_weights_sum_to_one() {
             assert!((w - 1.0).abs() < 1e-12);
         }
     }
-    assert_eq!(BodyMix::new(f64::NAN, 3.0), BodyMix { female: 0.0, child: 1.0 });
+    assert_eq!(BodyMix::new(f64::NAN, 3.0), BodyMix::CHILD);
+}
+
+#[test]
+fn a_build_scales_the_blend_and_nothing_calibrated() {
+    let big = BodyMix::MALE.with_build(Some(1.1), Some(1.3));
+    assert_eq!(big.preset(), Some(BodyName::Male), "the blend's weights don't change");
+    assert!((big.body().scale - 1.1).abs() < 1e-12);
+    assert!((big.body().pharynx - 1.3).abs() < 1e-12);
+    assert_eq!(big.body().tongue_radius, BODY_MALE.tongue_radius);
+    assert_eq!(vowel_artic("i", big), vowel_artic("i", BodyMix::MALE));
+    assert_eq!(default_f0(big), default_f0(BodyMix::MALE));
+    // clamped to a speaker's range; no build is the preset itself
+    assert_eq!(BodyMix::MALE.with_build(Some(9.0), Some(f64::NAN)).size, Some(BodyMix::BUILD_RANGE.1));
+    assert_eq!(BodyMix::MALE.with_build(Some(9.0), Some(f64::NAN)).pharynx, None);
+    assert_eq!(BodyMix::MALE.with_build(None, None), BodyMix::MALE);
+    // a longer airway: more nodes than the preset's
+    let a = HumanAirway::new(96000.0, BodyMix::MALE.body());
+    let b = HumanAirway::new(96000.0, big.body());
+    assert!(b.n_ph > a.n_ph, "pharynx nodes {} vs {}", b.n_ph, a.n_ph);
+    // an engine switched to a built body keeps it
+    let mut e = Engine::new(48000.0);
+    assert_eq!(e.set_body(big).body, big);
+}
+
+#[test]
+fn a_build_round_trips_through_json() {
+    let o: PlanOptions = serde_json::from_str(r#"{"body":{"female":0,"child":0,"size":1.07,"pharynx":1.35},"t0":0}"#).unwrap();
+    assert_eq!(o.body, BodyMix::MALE.with_build(Some(1.07), Some(1.35)));
+    // without a build the JSON is what it always was (the planning goldens serialize bodies)
+    assert_eq!(serde_json::to_string(&BodyMix::new(0.25, 0.5)).unwrap(), r#"{"female":0.25,"child":0.5}"#);
 }
 
 #[test]
@@ -35,7 +65,7 @@ fn deserializes_from_a_name_or_a_mix() {
     let o: PlanOptions = serde_json::from_str(r#"{"body":"female","t0":0}"#).unwrap();
     assert_eq!(o.body, BodyMix::FEMALE);
     let o: PlanOptions = serde_json::from_str(r#"{"body":{"female":0.25,"child":0.5},"t0":0}"#).unwrap();
-    assert_eq!(o.body, BodyMix { female: 0.25, child: 0.5 });
+    assert_eq!(o.body, BodyMix::new(0.25, 0.5));
 }
 
 #[test]

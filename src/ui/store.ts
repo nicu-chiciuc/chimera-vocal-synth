@@ -9,6 +9,7 @@ import { BEAT_PRESETS, BASS_NOTE, beatReady, parseBeat, type BeatStep } from "..
 import { singNoteOn, singNoteOff, stopSinging, ensureDictionary } from "./singing.ts";
 import { stopSpeaking } from "./speech.ts";
 import { connectMidi, disconnectMidi, type MidiStatus } from "./midi.ts";
+import type { VoiceProfile } from "../voices/index.ts";
 
 export type Mode = "play" | "speak" | "sing" | "bestiary" | "beatbox";
 
@@ -73,6 +74,10 @@ interface State {
   setBody: (b: BodyMix) => void;
   /** show this body without rebuilding the voice yet (a drag in progress; setBody commits it) */
   previewBody: (b: BodyMix) => void;
+  /** the voice profile in use (src/voices), or null */
+  voice: VoiceProfile | null;
+  /** take on a voice profile's body, source settings, posture and habits (null: back to a plain body) */
+  setVoice: (v: VoiceProfile | null) => void;
   setSource: (v: Partial<VoiceSource>) => void;
   setArtic: (v: Partial<HumanArtic>, tipFree?: boolean) => void;
   setVolume: (v: number) => void;
@@ -248,6 +253,7 @@ export const useStore = create<State>((set, get) => ({
         if (!sameBody(s.body, PRESETS.male)) engine.setBody(s.body);
         engine.setSource(s.source);
         engine.setArtic(s.artic, s.tipFree);
+        if (s.voice) engine.setHabits(s.voice.habits);
         if (s.mode === "bestiary") engine.setCreature(s.creature, s.cparams[s.creature]);
         if (s.mode === "beatbox") {
           engine.setMic(s.mic);
@@ -274,6 +280,27 @@ export const useStore = create<State>((set, get) => ({
     engine.setBody(b);
   },
   previewBody: (b) => set({ body: b }),
+  voice: null,
+  setVoice: (next) => {
+    const prev = get().voice;
+    // what the previous profile set goes back to the defaults; then the new one's settings
+    if (prev) {
+      const src = Object.fromEntries(Object.keys(prev.source).filter((k) => k !== "f0").map((k) => [k, DEFAULT_SOURCE[k as keyof VoiceSource]]));
+      get().setSource(src);
+      get().setArtic(Object.fromEntries(Object.keys(prev.posture).map((k) => [k, NEUTRAL[k as keyof HumanArtic]])));
+    }
+    set({ voice: next });
+    engine.setHabits(next?.habits ?? {});
+    if (!next) {
+      const b = get().body;
+      if (prev) get().setBody({ female: b.female, child: b.child });
+      return;
+    }
+    get().setBody(next.body);
+    const { f0: _, ...source } = next.source;
+    get().setSource(source);
+    get().setArtic(next.posture);
+  },
   setSource: (v) => {
     set((s) => ({ source: { ...s.source, ...v } }));
     engine.setSource(v);

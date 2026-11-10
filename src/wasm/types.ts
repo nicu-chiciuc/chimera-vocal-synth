@@ -51,6 +51,19 @@ export interface HumanArtic {
 export interface BodyMix {
   female: number;
   child: number;
+  /** a speaker's build: overall size × the blend's (absent: 1) */
+  size?: number;
+  /** a speaker's build: pharynx length × the blend's (absent: 1) */
+  pharynx?: number;
+}
+
+/**
+ * A speaker's articulatory habits (the engine's `Habits`): `offset` is added to every planned
+ * target of an articulator, `reduce` (0..1) pulls tongue-body targets toward neutral.
+ */
+export interface Habits {
+  offset?: Partial<Record<ArticKey, number>>;
+  reduce?: number;
 }
 
 export interface HumanBody {

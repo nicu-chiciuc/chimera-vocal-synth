@@ -27,8 +27,17 @@ export function bodyWeights(b: BodyMix): [BodyName, number][] {
   ];
 }
 
-/** The preset this body is exactly, or null. */
+/** A speaker built bigger, smaller or with another throat length than the blend. */
+export const hasBuild = (b: BodyMix) => (b.size ?? 1) !== 1 || (b.pharynx ?? 1) !== 1;
+
+/** The preset this body is exactly (with the preset's own build), or null. */
 export function presetOf(b: BodyMix): BodyName | null {
+  if (hasBuild(b)) return null;
+  return bodyWeights(b).find(([, w]) => w === 1)?.[0] ?? null;
+}
+
+/** The preset the blend is exactly, whatever the build. */
+export function blendPresetOf(b: BodyMix): BodyName | null {
   return bodyWeights(b).find(([, w]) => w === 1)?.[0] ?? null;
 }
 
@@ -38,14 +47,14 @@ export function nearestBody(b: BodyMix): BodyName {
 }
 
 export function sameBody(a: BodyMix | null | undefined, b: BodyMix | null | undefined): boolean {
-  return !!a && !!b && a.female === b.female && a.child === b.child;
+  return !!a && !!b && a.female === b.female && a.child === b.child && (a.size ?? 1) === (b.size ?? 1) && (a.pharynx ?? 1) === (b.pharynx ?? 1);
 }
 
-export const bodyKey = (b: BodyMix) => `${b.female},${b.child}`;
+export const bodyKey = (b: BodyMix) => `${b.female},${b.child},${b.size ?? 1},${b.pharynx ?? 1}`;
 
 /** A per-preset quantity blended by the body's weights (geometrically: pitches, frequencies). */
 export function blendLog(b: BodyMix, of: Record<BodyName, number>): number {
-  const p = presetOf(b);
+  const p = blendPresetOf(b);
   if (p) return of[p];
   return Math.exp(bodyWeights(b).reduce((s, [n, w]) => s + w * Math.log(of[n]), 0));
 }
@@ -55,10 +64,13 @@ export const defaultF0 = (b: BodyMix) => blendLog(b, { male: 110, female: 205, c
 
 /** "Adult female", or the blend's shares: "Male 40 · Female 30 · Child 30 %". */
 export function bodyLabel(b: BodyMix): string {
-  const p = presetOf(b);
-  if (p) return PRESET_LABEL[p];
-  const parts = bodyWeights(b)
-    .filter(([, w]) => w > 0.005)
-    .map(([n, w]) => `${n[0].toUpperCase()}${n.slice(1)} ${Math.round(w * 100)}`);
-  return `${parts.join(" · ")} %`;
+  const p = blendPresetOf(b);
+  const blend = p
+    ? PRESET_LABEL[p]
+    : `${bodyWeights(b)
+        .filter(([, w]) => w > 0.005)
+        .map(([n, w]) => `${n[0].toUpperCase()}${n.slice(1)} ${Math.round(w * 100)}`)
+        .join(" · ")} %`;
+  if (!hasBuild(b)) return blend;
+  return `${blend}, size ${Math.round((b.size ?? 1) * 100)} %, throat ${Math.round((b.pharynx ?? 1) * 100)} %`;
 }
