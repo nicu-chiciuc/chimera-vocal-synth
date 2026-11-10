@@ -1471,3 +1471,21 @@ No batch uses it yet: whether it decides the next batch, and Whisper guards, is 
   flags remain, including brief whole words and unresolved "river", "memories", "driving",
   and one "mama". Neither this audit nor the clarity score establishes that those are correct.
   Reference data, the full audit, validation, and audio stay outside git.
+
+## Hurt: four small vocal timing repairs (2026-11-10)
+
+- Audited all 210 vowels; no additional clipped phrase openings were supported. Four
+  within-word repairs passed the reference-formant check: "tears", "wear", "someone",
+  and "would". They recover vowels squeezed to 30–70 ms by long adjacent consonants.
+- Kept round 3's body, source, pitch, and pressure controls fixed. Only those four words'
+  internal phone boundaries move; no word starts or ends change.
+- On the four affected lines, Whisper word error went from 41.18% to 23.53%. "Wear" and
+  "would" are recognized after the repair; the other two lines do not regress. Median
+  whole-song envelope correlation stays 0.90, and lines below 0.6 fall from one to zero.
+- Speaker similarity on this small subset decreases from 0.1107 to 0.0842. This is a clarity
+  and timing repair, not evidence of improved singer identity. Pronunciation remains imperfect.
+- Re-render all local candidates from the corrected timing. Keep the previous round-3
+  audio and matching telemetry as a selectable local comparison. Refresh the shared round-3
+  score, audio, animation, and manifest together. Original reference and backing audio stay local.
+- `bun run test`, typecheck, and seven Python regressions pass. The repair algorithm and
+  engine code are unchanged.

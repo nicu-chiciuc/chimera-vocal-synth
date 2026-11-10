@@ -5,7 +5,7 @@ These are CHIMERA's generated vocals without backing tracks:
 - [Hurt, fitted voice round 3](https://raw.githubusercontent.com/nicu-chiciuc/chimera-vocal-synth/t3/fit-target-voice/performances/hurt/vocals.mp3)
 - [Take Me Home, Country Roads, untuned male with timing repairs](https://raw.githubusercontent.com/nicu-chiciuc/chimera-vocal-synth/t3/fit-target-voice/performances/country-roads/vocals.mp3)
 
-[Download both performances, WAV masters, scores, and animation](https://github.com/nicu-chiciuc/chimera-vocal-synth/releases/download/performances-2026-11-09/chimera-performances.zip).
+[Download both performances, WAV masters, scores, and animation](https://github.com/nicu-chiciuc/chimera-vocal-synth/releases/download/performances-2026-11-10/chimera-performances.zip).
 
 The files keep the full performance timeline, including pauses and the instrumental introduction's
 silence. They contain no original recording or backing audio. These are synthetic covers of
@@ -23,7 +23,8 @@ Each folder contains:
 
 WAV masters are generated locally and included in the download bundle, but excluded from git.
 You can regenerate them with the commands below. Country Roads has nine accepted word-timing
-repairs; some pronunciation problems remain. The opt-in long-vowel experiment is not used here.
+repairs. Hurt includes four timing repairs in "tears", "wear", "someone", and "would";
+some pronunciation problems remain. The opt-in long-vowel experiment is not used here.
 
 ## Regenerate the vocals
 
