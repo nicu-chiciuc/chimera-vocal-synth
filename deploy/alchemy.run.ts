@@ -9,12 +9,20 @@
 // (@samebase/alchemy-kit/github-state): no bucket and no other account. A run needs GITHUB_TOKEN
 // (write access to the repository's contents), ALCHEMY_GITHUB_STATE_KEY (32 random bytes in
 // base64, a repository secret), and CLOUDFLARE_API_TOKEN with CLOUDFLARE_ACCOUNT_ID (a token from
-// the "Edit Cloudflare Workers" template). From a laptop, in this folder:
+// the "Edit Cloudflare Workers" template, and for DOMAIN below three permissions on its zone). From
+// a laptop, in this folder:
 //   GITHUB_TOKEN="$(gh auth token)" ALCHEMY_GITHUB_STATE_KEY=... npm run deploy
 import * as Cloudflare from "@alchemy.run/cloudflare";
 import * as GitHubState from "@samebase/alchemy-kit/github-state";
 import * as Alchemy from "alchemy";
 import * as Effect from "effect/Effect";
+
+/**
+ * The name the preview answers to: a hostname in a Cloudflare zone of the deploying account. The
+ * token then also needs Zone Read, Workers Routes Write and DNS Write on that zone. A fork with no
+ * zone takes this out and shares the workers.dev address.
+ */
+const DOMAIN = "chimera.tsx.md";
 
 /** The cache rules of vercel.json: the hashed bundles for a year, fonts and data for a day. */
 const HEADERS = `/assets/*
@@ -35,6 +43,9 @@ export default Alchemy.Stack(
     const { stage } = yield* Alchemy.Stack;
     const site = yield* Cloudflare.Worker("Site", {
       name: stage === "prod" ? "chimera-vocal-synth-preview" : `chimera-vocal-synth-preview-${stage}`,
+      // the link to share. Cloudflare makes the DNS record and the certificate; the workers.dev
+      // address stays. Another stage has only its workers.dev address.
+      domain: stage === "prod" ? DOMAIN : undefined,
       assets: {
         directory: "../dist",
         // /plugin → /plugin/, as vercel.json redirects it

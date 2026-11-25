@@ -3,9 +3,11 @@
 # itself is Vercel's, from the upstream repository; this runs nowhere else.
 #
 # The repository secrets: CLOUDFLARE_API_TOKEN and CLOUDFLARE_ACCOUNT_ID (a token from the "Edit
-# Cloudflare Workers" template), and ALCHEMY_GITHUB_STATE_KEY (`openssl rand -base64 32`), which
-# seals the secrets in the state. The state is on the branch `alchemy-state-store` of this
-# repository, written with the run's own token: hence `contents: write`.
+# Cloudflare Workers" template, plus Zone Read, Workers Routes Write and DNS Write on the zone of
+# the custom domain in deploy/alchemy.run.ts), and ALCHEMY_GITHUB_STATE_KEY
+# (`openssl rand -base64 32`), which seals the secrets in the state. The state is on the branch
+# `alchemy-state-store` of this repository, written with the run's own token: hence
+# `contents: write`.
 name: preview
 
 on:
