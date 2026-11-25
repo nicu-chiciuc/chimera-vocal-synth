@@ -58,6 +58,9 @@ jobs:
       - name: Build the web app
         if: steps.keys.outputs.skip != 'true'
         run: bun install --frozen-lockfile && bun run build
+        env:
+          # the preview starts with a chord's voices (src/ui/store.ts, START_VOICES); the site starts with one
+          VITE_START_VOICES: 3
 
       - uses: actions/setup-node@v5
         if: steps.keys.outputs.skip != 'true'

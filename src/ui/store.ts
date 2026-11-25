@@ -121,6 +121,13 @@ export function creatureKeyHz(midi: number, p: Pick<ParamDef, "min" | "max">): n
 /** The most voices the web app offers: each costs about 15 % of a laptop's core (docs/plugin.md, "The web app's chords"). */
 export const WEB_MAX_VOICES = 4;
 
+/**
+ * The voices the web app starts with: one, unless the build sets VITE_START_VOICES. The preview's
+ * build sets 3 (.github/workflows/preview.yml), so a visitor's first two keys are a chord with no
+ * chip to find. In the plugin the host's parameter sets the count.
+ */
+const START_VOICES = inPlugin ? 1 : Math.max(1, Math.min(WEB_MAX_VOICES, Math.round(Number(import.meta.env.VITE_START_VOICES) || 1)));
+
 /** The voices that play: a chord's in Sing and Play, one in the other tabs. */
 const playingVoices = (s: { mode: Mode; voices: number }) => (s.mode === "sing" || s.mode === "play" ? s.voices : 1);
 
@@ -226,7 +233,7 @@ export const useStore = create<State>((set, get) => ({
   hold: false,
   heldNotes: [],
   voiceNotes: [],
-  voices: 1,
+  voices: START_VOICES,
   setVoices: (count) => {
     const n = Math.max(1, Math.min(inPlugin ? MAX_VOICES : WEB_MAX_VOICES, Math.round(count)));
     if (inPlugin) {
@@ -567,6 +574,12 @@ export const useStore = create<State>((set, get) => ({
     });
   },
 }));
+
+// the voices the page starts with are the allocator's too, from the first moment. Nothing shows
+// without this today (Sing's first key waits for the start, which sets the count, and so does a
+// change of tab); a page that opened on Play would give its first keys to voice 0, which then
+// breathes on no voice.
+alloc.count = playingVoices(useStore.getState());
 
 engine.onStatus(() => useStore.setState({ lightAudio: engine.light, overloaded: engine.overloaded }));
 // the lighter audio is a new engine: the phrase being sung or spoken is gone (the score was the
