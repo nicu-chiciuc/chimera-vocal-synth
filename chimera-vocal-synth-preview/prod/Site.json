@@ -1,0 +1,25 @@
+{
+  "status": "creating",
+  "fqn": "Site",
+  "logicalId": "Site",
+  "instanceId": "6e258ab66b0f7e0fdde2461f93920237",
+  "downstream": [],
+  "props": {
+    "name": "chimera-vocal-synth-preview",
+    "assets": {
+      "directory": "../dist",
+      "htmlHandling": "auto-trailing-slash",
+      "notFoundHandling": "none",
+      "headers": "/assets/*\n  Cache-Control: public, max-age=31536000, immutable\n/fonts/*\n  Cache-Control: public, max-age=86400\n/data/*\n  Cache-Control: public, max-age=86400\n"
+    },
+    "compatibility": {
+      "date": "2026-11-01"
+    },
+    "isExternal": true
+  },
+  "providerVersion": 0,
+  "resourceType": "Cloudflare.Worker",
+  "bindings": [],
+  "removalPolicy": "destroy",
+  "providerMode": "live"
+}
