@@ -1,0 +1,18 @@
+{
+  "name": "chimera-preview-deploy",
+  "private": true,
+  "type": "module",
+  "description": "Deploys the built web app (../dist) to a Cloudflare Worker with Alchemy, for a link to share before the branch is merged. Its own folder, so the app's package.json and bun.lock stay as they are.",
+  "scripts": {
+    "deploy": "alchemy deploy --stage prod --yes --no-input",
+    "plan": "alchemy plan --stage prod --no-input"
+  },
+  "devDependencies": {
+    "@alchemy.run/cloudflare": "2.0.0-beta.87",
+    "@effect/platform-node": "4.1.4",
+    "@samebase/alchemy-kit": "0.7.0",
+    "@types/node": "24.19.2",
+    "alchemy": "2.0.0-beta.87",
+    "effect": "4.1.4"
+  }
+}

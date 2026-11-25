@@ -1,0 +1,77 @@
+# A link to share before a branch is merged: each push to the branch `preview` (of a fork) builds the
+# web app and deploys it to a Cloudflare Worker with Alchemy (deploy/alchemy.run.ts). The site
+# itself is Vercel's, from the upstream repository; this runs nowhere else.
+#
+# The repository secrets: CLOUDFLARE_API_TOKEN and CLOUDFLARE_ACCOUNT_ID (a token from the "Edit
+# Cloudflare Workers" template), and ALCHEMY_GITHUB_STATE_KEY (`openssl rand -base64 32`), which
+# seals the secrets in the state. The state is on the branch `alchemy-state-store` of this
+# repository, written with the run's own token: hence `contents: write`.
+name: preview
+
+on:
+  push:
+    branches: [preview]
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+# one deploy at a time: a second would fail at the state store's lock
+concurrency:
+  group: preview
+  cancel-in-progress: false
+
+jobs:
+  deploy:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    steps:
+      # a repository without the secrets (the upstream one, a fork that hasn't set them) deploys nothing
+      - name: Skip without the Cloudflare token
+        id: keys
+        env:
+          TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+        run: |
+          if [ -z "$TOKEN" ]; then
+            echo "::notice::No deploy: set the repository secrets CLOUDFLARE_API_TOKEN, CLOUDFLARE_ACCOUNT_ID and ALCHEMY_GITHUB_STATE_KEY."
+            echo "skip=true" >> "$GITHUB_OUTPUT"
+          fi
+
+      - uses: actions/checkout@v5
+        if: steps.keys.outputs.skip != 'true'
+        with:
+          persist-credentials: false
+
+      - uses: dtolnay/rust-toolchain@stable
+        if: steps.keys.outputs.skip != 'true'
+        with:
+          targets: wasm32-unknown-unknown
+
+      - uses: oven-sh/setup-bun@v2
+        if: steps.keys.outputs.skip != 'true'
+
+      - uses: Swatinem/rust-cache@v2
+        if: steps.keys.outputs.skip != 'true'
+
+      - name: Build the web app
+        if: steps.keys.outputs.skip != 'true'
+        run: bun install --frozen-lockfile && bun run build
+
+      - uses: actions/setup-node@v5
+        if: steps.keys.outputs.skip != 'true'
+        with:
+          node-version: 24
+          cache: npm
+          cache-dependency-path: deploy/package-lock.json
+
+      - name: Deploy
+        if: steps.keys.outputs.skip != 'true'
+        working-directory: deploy
+        run: |
+          npm ci --no-audit --no-fund
+          npm run deploy
+        env:
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+          ALCHEMY_GITHUB_STATE_KEY: ${{ secrets.ALCHEMY_GITHUB_STATE_KEY }}
+          GITHUB_TOKEN: ${{ github.token }}
