@@ -3,7 +3,7 @@
   "fqn": "Site",
   "logicalId": "Site",
   "instanceId": "6e258ab66b0f7e0fdde2461f93920237",
-  "downstream": [],
+  "resourceType": "Cloudflare.Worker",
   "props": {
     "name": "chimera-vocal-synth-preview",
     "assets": {
@@ -18,8 +18,8 @@
     "isExternal": true
   },
   "providerVersion": 0,
-  "resourceType": "Cloudflare.Worker",
   "bindings": [],
+  "downstream": [],
   "removalPolicy": "destroy",
   "providerMode": "live"
 }
