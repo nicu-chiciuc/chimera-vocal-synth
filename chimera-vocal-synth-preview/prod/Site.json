@@ -1,11 +1,12 @@
 {
-  "status": "created",
+  "status": "updating",
   "fqn": "Site",
   "logicalId": "Site",
   "instanceId": "6e258ab66b0f7e0fdde2461f93920237",
   "resourceType": "Cloudflare.Worker",
   "props": {
     "name": "chimera-vocal-synth-preview",
+    "domain": "chimera.tsx.md",
     "assets": {
       "directory": "../dist",
       "htmlHandling": "auto-trailing-slash",
@@ -43,9 +44,60 @@
       "metadata": "d9503c72366273381d7843dbf321de4c8d1bef9a70f4e8505982b69d4053131f"
     }
   },
-  "bindings": [],
   "providerVersion": 0,
+  "bindings": [],
   "downstream": [],
+  "old": {
+    "status": "created",
+    "fqn": "Site",
+    "logicalId": "Site",
+    "instanceId": "6e258ab66b0f7e0fdde2461f93920237",
+    "resourceType": "Cloudflare.Worker",
+    "props": {
+      "name": "chimera-vocal-synth-preview",
+      "assets": {
+        "directory": "../dist",
+        "htmlHandling": "auto-trailing-slash",
+        "notFoundHandling": "none",
+        "headers": "/assets/*\n  Cache-Control: public, max-age=31536000, immutable\n/fonts/*\n  Cache-Control: public, max-age=86400\n/data/*\n  Cache-Control: public, max-age=86400\n"
+      },
+      "compatibility": {
+        "date": "2026-11-01"
+      },
+      "isExternal": true
+    },
+    "attr": {
+      "workerId": "ca9637ed213d4bad9afad1209a4c624e",
+      "workerName": "chimera-vocal-synth-preview",
+      "logpush": false,
+      "url": "https://chimera-vocal-synth-preview.pfp.workers.dev",
+      "urls": [
+        "https://chimera-vocal-synth-preview.pfp.workers.dev"
+      ],
+      "tags": [
+        "alchemy:stack:chimera-vocal-synth-preview",
+        "alchemy:stage:prod",
+        "alchemy:id:Site"
+      ],
+      "durableObjectNamespaces": {},
+      "accountId": "fe57d01d7ab41f60d00ba1aade20eb33",
+      "routes": [],
+      "crons": [],
+      "tailConsumers": [],
+      "versionId": "e1858613-f8f3-4081-adc5-77ed04ba59a2",
+      "deploymentId": "7c6b77c0-fb97-455c-876e-ed2f28850bca",
+      "secretNames": [],
+      "hash": {
+        "assets": "efd511aaa5b939c8f0e57e4582dc36560e83232ae8be775c3fa9d1507f24fe6f",
+        "metadata": "d9503c72366273381d7843dbf321de4c8d1bef9a70f4e8505982b69d4053131f"
+      }
+    },
+    "bindings": [],
+    "providerVersion": 0,
+    "downstream": [],
+    "removalPolicy": "destroy",
+    "providerMode": "live"
+  },
   "removalPolicy": "destroy",
   "providerMode": "live"
 }
