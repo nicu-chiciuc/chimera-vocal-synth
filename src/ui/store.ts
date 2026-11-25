@@ -123,7 +123,7 @@ export const WEB_MAX_VOICES = 4;
 
 /**
  * The voices the web app starts with: one, unless the build sets VITE_START_VOICES. The preview's
- * build sets 3 (.github/workflows/preview.yml), so a visitor's first two keys are a chord with no
+ * build sets 2 (.github/workflows/preview.yml), so a visitor's first two keys are a chord with no
  * chip to find. In the plugin the host's parameter sets the count.
  */
 const START_VOICES = inPlugin ? 1 : Math.max(1, Math.min(WEB_MAX_VOICES, Math.round(Number(import.meta.env.VITE_START_VOICES) || 1)));
