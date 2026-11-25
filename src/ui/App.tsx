@@ -96,7 +96,7 @@ function TopBar() {
           </a>
         )}
         {!inPlugin && (
-          <a className="repo-link" href="https://github.com/jamesondh/chimera-vocal-synth" target="_blank" rel="noreferrer" aria-label="Source code on GitHub" title="Source code on GitHub">
+          <a className="repo-link" href="https://github.com/nicu-chiciuc/chimera-vocal-synth/tree/preview" target="_blank" rel="noreferrer" aria-label="Source code on GitHub" title="Source code on GitHub">
             <svg viewBox="0 0 16 16" width="18" height="18" aria-hidden="true">
               <path
                 fill="currentColor"
