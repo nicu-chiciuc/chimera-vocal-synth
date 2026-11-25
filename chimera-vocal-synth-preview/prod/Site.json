@@ -1,5 +1,5 @@
 {
-  "status": "updated",
+  "status": "updating",
   "fqn": "Site",
   "logicalId": "Site",
   "instanceId": "6e258ab66b0f7e0fdde2461f93920237",
@@ -50,9 +50,67 @@
       "metadata": "d9503c72366273381d7843dbf321de4c8d1bef9a70f4e8505982b69d4053131f"
     }
   },
-  "bindings": [],
   "providerVersion": 0,
+  "bindings": [],
   "downstream": [],
+  "old": {
+    "status": "updated",
+    "fqn": "Site",
+    "logicalId": "Site",
+    "instanceId": "6e258ab66b0f7e0fdde2461f93920237",
+    "resourceType": "Cloudflare.Worker",
+    "props": {
+      "name": "chimera-vocal-synth-preview",
+      "domain": "chimera.tsx.md",
+      "assets": {
+        "directory": "../dist",
+        "htmlHandling": "auto-trailing-slash",
+        "notFoundHandling": "none",
+        "headers": "/assets/*\n  Cache-Control: public, max-age=31536000, immutable\n/fonts/*\n  Cache-Control: public, max-age=86400\n/data/*\n  Cache-Control: public, max-age=86400\n"
+      },
+      "compatibility": {
+        "date": "2026-11-01"
+      },
+      "isExternal": true
+    },
+    "attr": {
+      "workerId": "ca9637ed213d4bad9afad1209a4c624e",
+      "workerName": "chimera-vocal-synth-preview",
+      "logpush": false,
+      "url": "https://chimera.tsx.md",
+      "urls": [
+        "https://chimera.tsx.md",
+        "https://chimera-vocal-synth-preview.pfp.workers.dev"
+      ],
+      "domain": {
+        "name": "chimera.tsx.md",
+        "aliases": [],
+        "redirects": []
+      },
+      "tags": [
+        "alchemy:stack:chimera-vocal-synth-preview",
+        "alchemy:stage:prod",
+        "alchemy:id:Site"
+      ],
+      "durableObjectNamespaces": {},
+      "accountId": "fe57d01d7ab41f60d00ba1aade20eb33",
+      "routes": [],
+      "crons": [],
+      "tailConsumers": [],
+      "versionId": "a31c7a83-6751-4278-a56e-cd328eaf4f39",
+      "deploymentId": "ed2ccddc-0052-4cd1-b9c4-3917617d935f",
+      "secretNames": [],
+      "hash": {
+        "assets": "88b5b1c9ed9390710786c8c092e90522712f196f9924015955b6e00700ec77a1",
+        "metadata": "d9503c72366273381d7843dbf321de4c8d1bef9a70f4e8505982b69d4053131f"
+      }
+    },
+    "bindings": [],
+    "providerVersion": 0,
+    "downstream": [],
+    "removalPolicy": "destroy",
+    "providerMode": "live"
+  },
   "removalPolicy": "destroy",
   "providerMode": "live"
 }
